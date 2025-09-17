@@ -1,0 +1,239 @@
+name: Keycloak Unit Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.java'
+      - '**/pom.xml'
+      - '**/src/**'
+      - '!**/testsuite/**'
+      - '!**/quarkus/tests/**'
+      - '!**/tests/**'
+  pull_request:
+    branches: [ main, develop ]
+    paths:
+      - '**/*.java'
+      - '**/pom.xml'
+      - '**/src/**'
+      - '!**/testsuite/**'
+      - '!**/quarkus/tests/**'
+      - '!**/tests/**'
+  workflow_dispatch:
+    inputs:
+      test-modules:
+        description: 'Specific modules to test (comma-separated, leave empty for all)'
+        required: false
+        default: ''
+      java-version:
+        description: 'Java version to use'
+        required: false
+        default: '17'
+        type: choice
+        options:
+          - '17'
+          - '21'
+
+env:
+  MAVEN_ARGS: "-B -nsu -Daether.connector.http.connectionMaxTtl=25"
+  SUREFIRE_RERUN_FAILING_COUNT: 2
+  SUREFIRE_RETRY: "-Dsurefire.rerunFailingTestsCount=2"
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+permissions:
+  contents: read
+
+jobs:
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    strategy:
+      matrix:
+        java-version: [17, 21]
+        exclude:
+          - java-version: 21
+            # Only run Java 21 tests on main branch or manual dispatch
+            if: github.ref != 'refs/heads/main' && github.event_name != 'workflow_dispatch'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java ${{ matrix.java-version }}
+        uses: ./.github/actions/java-setup
+        with:
+          java-version: ${{ matrix.java-version }}
+
+      - name: Maven cache
+        uses: ./.github/actions/maven-cache
+
+      - name: PNPM store cache
+        uses: ./.github/actions/pnpm-store-cache
+
+      - name: Build Keycloak (skip tests)
+        run: |
+          # Build only the core modules needed for unit tests
+          ./mvnw clean install -DskipTests -DskipExamples -pl \
+            boms,common,core,crypto,server-spi,server-spi-private, \
+            saml-core-api,saml-core,federation,services,themes, \
+            model,util,rest,integration,authz,js,test-framework
+
+      - name: Determine test modules
+        id: test-modules
+        run: |
+          if [ -n "${{ github.event.inputs.test-modules }}" ]; then
+            # Use specified modules
+            echo "modules=${{ github.event.inputs.test-modules }}" >> $GITHUB_OUTPUT
+          else
+            # Find all modules with unit tests (excluding integration test modules)
+            MODULES=$(find . -name '*Test.java' -type f | \
+              grep -E '\.(common|core|crypto|server-spi|server-spi-private|saml-core|federation|services|themes|model|util|rest|integration|authz|js|test-framework)/' | \
+              sed 's|/src/test/java/.*||' | \
+              sed 's|^\./||' | \
+              sort | uniq | \
+              tr '\n' ',' | sed 's/,$//')
+            echo "modules=$MODULES" >> $GITHUB_OUTPUT
+          fi
+          echo "Testing modules: $MODULES"
+
+      - name: Run unit tests
+        run: |
+          if [ -n "${{ steps.test-modules.outputs.modules }}" ]; then
+            echo "Running tests for modules: ${{ steps.test-modules.outputs.modules }}"
+            ./mvnw test ${{ env.SUREFIRE_RETRY }} -pl "${{ steps.test-modules.outputs.modules }}" -am
+          else
+            echo "No test modules found, running all unit tests"
+            # Fallback to the original approach from ci.yml
+            SEP=""
+            PROJECTS=""
+            for i in `find -name '*Test.java' -type f | egrep -v './(testsuite|quarkus|docs|tests|test-framework)/' | sed 's|/src/test/java/.*||' | sort | uniq | sed 's|./||'`; do
+              PROJECTS="$PROJECTS$SEP$i"
+              SEP=","
+            done
+            ./mvnw test ${{ env.SUREFIRE_RETRY }} -pl "$PROJECTS" -am
+          fi
+
+      - name: Upload JVM Heapdumps
+        if: always()
+        uses: ./.github/actions/upload-heapdumps
+
+      - name: Archive Surefire reports
+        if: always()
+        uses: ./.github/actions/archive-surefire-reports
+        with:
+          job-id: unit-tests-java-${{ matrix.java-version }}
+
+      - name: Test Results Summary
+        if: always()
+        run: |
+          echo "## Unit Test Results (Java ${{ matrix.java-version }})" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Count test results
+          if [ -d "target/surefire-reports" ]; then
+            TOTAL_TESTS=$(find target/surefire-reports -name "*.xml" -exec grep -l "<testcase" {} \; | wc -l)
+            FAILED_TESTS=$(find target/surefire-reports -name "*.xml" -exec grep -l "<failure" {} \; | wc -l)
+            SKIPPED_TESTS=$(find target/surefire-reports -name "*.xml" -exec grep -l "<skipped" {} \; | wc -l)
+            
+            echo "| Metric | Count |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Total Tests | $TOTAL_TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Failed Tests | $FAILED_TESTS |" >> $GITHUB_STEP_SUMMARY
+            echo "| Skipped Tests | $SKIPPED_TESTS |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "No test reports found." >> $GITHUB_STEP_SUMMARY
+          fi
+
+  test-framework-tests:
+    name: Test Framework Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: ./.github/actions/java-setup
+
+      - name: Maven cache
+        uses: ./.github/actions/maven-cache
+
+      - name: Build dependencies
+        run: |
+          ./mvnw clean install -DskipTests -DskipExamples -pl \
+            boms,common,core,crypto,server-spi,server-spi-private, \
+            saml-core-api,saml-core,federation,services,themes, \
+            model,util,rest,integration,authz,js
+
+      - name: Run test framework tests
+        run: |
+          ./mvnw test ${{ env.SUREFIRE_RETRY }} -pl test-framework
+
+      - name: Upload JVM Heapdumps
+        if: always()
+        uses: ./.github/actions/upload-heapdumps
+
+      - name: Archive Surefire reports
+        if: always()
+        uses: ./.github/actions/archive-surefire-reports
+        with:
+          job-id: test-framework-tests
+
+  quarkus-unit-tests:
+    name: Quarkus Unit Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: ./.github/actions/java-setup
+
+      - name: Maven cache
+        uses: ./.github/actions/maven-cache
+
+      - name: PNPM store cache
+        uses: ./.github/actions/pnpm-store-cache
+
+      - name: Build dependencies
+        run: |
+          ./mvnw clean install -DskipTests -DskipExamples -pl \
+            boms,common,core,crypto,server-spi,server-spi-private, \
+            saml-core-api,saml-core,federation,services,themes, \
+            model,util,rest,integration,authz,js,test-framework
+
+      - name: Run Quarkus unit tests
+        run: |
+          ./mvnw test ${{ env.SUREFIRE_RETRY }} -f quarkus/pom.xml -pl '!tests,!tests/junit5,!tests/integration,!dist'
+
+      - name: Upload JVM Heapdumps
+        if: always()
+        uses: ./.github/actions/upload-heapdumps
+
+      - name: Archive Surefire reports
+        if: always()
+        uses: ./.github/actions/archive-surefire-reports
+        with:
+          job-id: quarkus-unit-tests
+
+  status-check:
+    name: Status Check - Unit Tests
+    if: always()
+    needs: [unit-tests, test-framework-tests, quarkus-unit-tests]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Status check
+        uses: ./.github/actions/status-check
+        with:
+          jobs: ${{ toJSON(needs) }}
