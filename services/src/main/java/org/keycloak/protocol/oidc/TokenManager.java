@@ -1564,8 +1564,6 @@ public class TokenManager {
             String idpClientId = userSession.getNote("FEDERATED_CLIENT_ID");
             String idpSecret = userSession.getNote("FEDERATED_SECRET");
             String idpTokenUrl = userSession.getNote("FEDERATED_TOKEN_URL");
-            logger.info("old idp access token: " + idpAccessToken);
-            logger.info("old idp refresh token: " + idpRefreshToken);
             if (idpTokenUrl != null) {
                 SimpleHttp refreshTokenRequest = SimpleHttp.doPost(idpTokenUrl, session)
                         .param(OAUTH2_GRANT_TYPE_REFRESH_TOKEN, idpRefreshToken)
