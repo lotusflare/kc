@@ -17,9 +17,10 @@
 
 package org.keycloak.testsuite.util.cli;
 
-import org.infinispan.AdvancedCache;
-import org.infinispan.Cache;
-import org.infinispan.context.Flag;
+import java.util.Arrays;
+import java.util.Set;
+import java.util.TreeSet;
+
 import org.keycloak.common.util.Time;
 import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
 import org.keycloak.models.ClientModel;
@@ -33,9 +34,9 @@ import org.keycloak.models.sessions.infinispan.entities.UserSessionEntity;
 import org.keycloak.models.utils.KeycloakModelUtils;
 import org.keycloak.services.managers.UserSessionManager;
 
-import java.util.Arrays;
-import java.util.Set;
-import java.util.TreeSet;
+import org.infinispan.AdvancedCache;
+import org.infinispan.Cache;
+import org.infinispan.context.Flag;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -83,7 +84,7 @@ public abstract class AbstractSessionCacheCommand extends AbstractCommand {
     }
 
     protected String toString(UserSessionEntity userSession) {
-        int clientSessionsSize = userSession.getAuthenticatedClientSessions()==null ? 0 : userSession.getAuthenticatedClientSessions().size();
+        int clientSessionsSize = userSession.getClientSessions().size();
         return "ID: " + userSession.getId() + ", realm: " + userSession.getRealmId()+ ", lastAccessTime: " + Time.toDate(userSession.getLastSessionRefresh()) +
                 ", authenticatedClientSessions: " + clientSessionsSize;
     }

@@ -19,6 +19,7 @@ package org.keycloak.quarkus.runtime;
 
 import java.io.File;
 import java.io.FilenameFilter;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
@@ -28,17 +29,19 @@ import java.util.Optional;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-import io.quarkus.runtime.LaunchMode;
-import io.smallrye.config.SmallRyeConfig;
-
 import org.keycloak.common.Profile;
 import org.keycloak.common.util.NetworkUtils;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
+import io.quarkus.runtime.LaunchMode;
+import io.smallrye.config.SmallRyeConfig;
+
 public final class Environment {
 
+    public static final String KC_CONFIG_REBUILD_CHECK = "kc.config.rebuild-check";
+    public static final String KC_CONFIG_BUILT = "kc.config.built";
+    public static final String KC_TEST_REBUILD = "kc.test.rebuild";
     private static final String KC_HOME_DIR = "kc.home.dir";
-    public static final String NON_SERVER_MODE = "nonserver";
     public static final String PROFILE ="kc.profile";
     public static final String ENV_PROFILE ="KC_PROFILE";
     public static final String DATA_PATH = File.separator + "data";
@@ -52,40 +55,24 @@ public final class Environment {
         return Boolean.getBoolean("quarkus.launch.rebuild");
     }
 
-    public static Boolean isRuntimeMode() {
-        return !isRebuild();
+    public static Optional<String> getHomeDir() {
+        return Optional.ofNullable(System.getProperty(KC_HOME_DIR));
     }
 
-    public static String getHomeDir() {
-        return System.getProperty(KC_HOME_DIR);
+    public static Optional<Path> getHomePath() {
+        return getHomeDir().map(Paths::get);
     }
 
-    public static Path getHomePath() {
-        String homeDir = getHomeDir();
-
-        if (homeDir != null) {
-            return Paths.get(homeDir);
-        }
-
-        return null;
+    public static Optional<String> getDataDir() {
+        return getHomeDir().map(p -> p.concat(DATA_PATH));
     }
 
-    public static String getDataDir() {
-        return getHomeDir() + DATA_PATH;
+    public static Optional<String> getDefaultThemeRootDir() {
+        return getHomeDir().map(p -> p.concat(DEFAULT_THEMES_PATH));
     }
 
-    public static String getDefaultThemeRootDir() {
-        return getHomeDir() + DEFAULT_THEMES_PATH;
-    }
-
-    public static Path getProvidersPath() {
-        Path homePath = Environment.getHomePath();
-
-        if (homePath != null) {
-            return homePath.resolve("providers");
-        }
-
-        return null;
+    public static Optional<Path> getProvidersPath() {
+        return Environment.getHomePath().map(p -> p.resolve("providers"));
     }
 
     public static String getCommand() {
@@ -117,10 +104,6 @@ public final class Environment {
         return Optional.ofNullable(org.keycloak.common.util.Environment.getProfile()).orElse("").equalsIgnoreCase(org.keycloak.common.util.Environment.DEV_PROFILE_VALUE);
     }
 
-    public static boolean isNonServerMode() {
-        return NON_SERVER_MODE.equalsIgnoreCase(org.keycloak.common.util.Environment.getProfile());
-    }
-
     public static boolean isWindows() {
         return NetworkUtils.checkForWindows();
     }
@@ -130,9 +113,9 @@ public final class Environment {
     }
 
     public static Map<String, File> getProviderFiles() {
-        Path providersPath = Environment.getProvidersPath();
+        Path providersPath = Environment.getProvidersPath().orElse(null);
 
-        if (providersPath == null) {
+        if (providersPath == null || !Files.exists(providersPath)) {
             return Collections.emptyMap();
         }
 
@@ -188,23 +171,16 @@ public final class Environment {
         return profile;
     }
 
-    public static boolean isDistribution() {
-        if (LaunchMode.current().isDevOrTest()) {
-            return false;
-        }
-        return getHomeDir() != null;
-    }
-
     public static boolean isRebuildCheck() {
-        return Boolean.getBoolean("kc.config.build-and-exit");
+        return Boolean.getBoolean(KC_CONFIG_REBUILD_CHECK);
     }
 
-    public static void setRebuildCheck() {
-        System.setProperty("kc.config.build-and-exit", "true");
+    public static void setRebuildCheck(boolean check) {
+        System.setProperty(KC_CONFIG_REBUILD_CHECK, Boolean.toString(check));
     }
 
     public static boolean isRebuilt() {
-        return Boolean.getBoolean("kc.config.built");
+        return Boolean.getBoolean(KC_CONFIG_BUILT);
     }
 
     public static void setHomeDir(Path path) {
@@ -222,13 +198,13 @@ public final class Environment {
         Profile profile = Profile.getInstance();
 
         if (profile == null) {
-            profile = Profile.configure(new QuarkusProfileConfigResolver());
+            profile = Profile.configure(new QuarkusSingleProfileConfigResolver(), new QuarkusProfileConfigResolver());
         }
 
         return profile;
     }
 
-    public static void removeHomeDir() {
-        System.getProperties().remove(KC_HOME_DIR);
+    public static void setRebuild() {
+        System.setProperty("quarkus.launch.rebuild", "true");
     }
 }

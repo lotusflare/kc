@@ -17,21 +17,29 @@
 
 package org.keycloak.it.cli.dist;
 
+import java.io.File;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.function.Consumer;
 
+import org.keycloak.it.junit5.extension.BeforeStartDistribution;
+import org.keycloak.it.junit5.extension.CLIResult;
+import org.keycloak.it.junit5.extension.DistributionTest;
+import org.keycloak.it.junit5.extension.RawDistOnly;
+import org.keycloak.it.junit5.extension.Storage;
+import org.keycloak.it.utils.KeycloakDistribution;
+
+import io.quarkus.test.junit.main.Launch;
+import io.quarkus.test.junit.main.LaunchResult;
+import org.hamcrest.MatcherAssert;
+import org.hamcrest.Matchers;
+import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledOnOs;
 import org.junit.jupiter.api.condition.OS;
-import org.keycloak.it.junit5.extension.BeforeStartDistribution;
-import org.keycloak.it.junit5.extension.CLIResult;
-import org.keycloak.it.junit5.extension.DistributionTest;
-import org.keycloak.it.junit5.extension.Storage;
-import org.keycloak.it.junit5.extension.RawDistOnly;
-import org.keycloak.it.utils.KeycloakDistribution;
-
-import io.quarkus.test.junit.main.Launch;
+import org.junit.jupiter.api.io.TempDir;
+import org.testcontainers.shaded.com.google.common.io.Files;
 
 @DistributionTest(reInstall = DistributionTest.ReInstall.BEFORE_TEST)
 @RawDistOnly(reason = "Not possible to mount files using docker.")
@@ -158,6 +166,9 @@ public class ClusterConfigDistTest {
     void testStartDevDefaultsToLocalCaches(CLIResult result) {
         result.assertStartedDevMode();
         result.assertLocalCache();
+        result.assertNoMessage("JGroups JDBC_PING discovery enabled");
+        result.assertNoMessage("JGroups Encryption enabled.");
+        result.assertNoMessage("Starting JGroups certificate reload manager");
     }
 
     @Test
@@ -182,6 +193,24 @@ public class ClusterConfigDistTest {
     }
 
     @Test
+    void testAbsoluteCacheFile(KeycloakDistribution dist, @TempDir Path tempDir) throws Exception {
+        File customCacheFile = tempDir.resolve("my-custom-cache.xml").toFile();
+        File missingCacheFile = tempDir.resolve("my-missing-cache.xml").toFile();
+        try (InputStream is = ClusterConfigDistTest.class.getResourceAsStream("/cache-ispn-custom-cache.xml")) {
+            Files.write(is.readAllBytes(), customCacheFile);
+        }
+
+        LaunchResult result = dist.run("start-dev", "--cache-config-file=" + customCacheFile.getAbsolutePath());
+        Assertions.assertEquals(0, result.exitCode());
+        MatcherAssert.assertThat(result.getOutput(), Matchers.containsString(WARN_DEFAULT_CACHE_MUTATIONS));
+
+        String absolutePath = missingCacheFile.getAbsolutePath();
+        result = dist.run("start-dev", "--cache-config-file=" + absolutePath);
+        Assertions.assertEquals(2, result.exitCode());
+        MatcherAssert.assertThat(result.getErrorOutput(), Matchers.matchesRegex("Cache config file '" + absolutePath + "' does not exist"));
+    }
+
+    @Test
     @BeforeStartDistribution(ConfigureCustomCache.class)
     @Launch({ "start-dev", "--cache-config-file=cache-ispn-custom-cache.xml", "--cache-config-mutate=true" })
     void testCustomCacheConfigurationNoWarning(CLIResult result) {
@@ -193,6 +222,29 @@ public class ClusterConfigDistTest {
     @Launch({ "start-dev", "--cache-config-file=cache-ispn-custom-user-cache.xml"})
     void testCustomUserCacheConfigurationNoWarning(CLIResult result) {
         result.assertNoMessage(WARN_DEFAULT_CACHE_MUTATIONS);
+    }
+
+    @Test
+    @Launch({ "start", "--cache=local", "--http-enabled=true", "--hostname-strict=false"})
+    void testNotClustered(CLIResult result) {
+        result.assertStarted();
+        result.assertLocalCache();
+        result.assertNoMessage("JGroups JDBC_PING discovery enabled");
+        result.assertNoMessage("JGroups Encryption enabled.");
+        result.assertNoMessage("Starting JGroups certificate reload manager");
+        result.assertNoMessage("Modifying the default cache configuration in the config file without setting cache-config-mutate=true is deprecated.");
+    }
+
+    @Test
+    @Launch({ "start-dev", "--cache-embedded-users-max-count=-1" })
+    void testNegativeMaxCountIgnoredForBoundedCache(CLIResult result) {
+        result.assertMessage("Ignoring unbounded max-count for cache 'users'");
+    }
+
+    @Test
+    @Launch({ "start-dev", "--cache-embedded-sessions-max-count=-1", "--features-disabled=persistent-user-sessions" })
+    void testNegativeMaxCountAllowedForVolatileCache(CLIResult result) {
+        result.assertNoMessage("Ignoring unbounded max-count for cache 'sessions'");
     }
 
     public static class ConfigureCacheUsingAsyncEncryption implements Consumer<KeycloakDistribution> {

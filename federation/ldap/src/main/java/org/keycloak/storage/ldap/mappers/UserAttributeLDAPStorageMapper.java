@@ -17,7 +17,17 @@
 
 package org.keycloak.storage.ldap.mappers;
 
-import org.jboss.logging.Logger;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
 import org.keycloak.component.ComponentModel;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.LDAPConstants;
@@ -38,17 +48,9 @@ import org.keycloak.storage.ldap.idm.model.LDAPObject;
 import org.keycloak.storage.ldap.idm.query.Condition;
 import org.keycloak.storage.ldap.idm.query.internal.LDAPQuery;
 
-import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import org.jboss.logging.Logger;
+
+import static java.util.Optional.ofNullable;
 
 /**
  * @author <a href="mailto:mposolda@redhat.com">Marek Posolda</a>
@@ -293,7 +295,9 @@ public class UserAttributeLDAPStorageMapper extends AbstractLDAPStorageMapper {
                 @Override
                 public String getUsername() {
                     if (UserModel.USERNAME.equals(userModelAttrName)) {
-                        return ldapUser.getAttributeAsString(ldapAttrName);
+                        return ofNullable(ldapUser.getAttributeAsString(ldapAttrName))
+                                .map(this::toLowerCaseIfImportEnabled)
+                                .orElse(null);
                     }
                     return super.getUsername();
                 }
@@ -301,7 +305,9 @@ public class UserAttributeLDAPStorageMapper extends AbstractLDAPStorageMapper {
                 @Override
                 public String getEmail() {
                     if (UserModel.EMAIL.equals(userModelAttrName)) {
-                        return ldapUser.getAttributeAsString(ldapAttrName);
+                        return ofNullable(ldapUser.getAttributeAsString(ldapAttrName))
+                                .map(this::toLowerCaseIfImportEnabled)
+                                .orElse(null);
                     }
                     return super.getEmail();
                 }
@@ -342,6 +348,12 @@ public class UserAttributeLDAPStorageMapper extends AbstractLDAPStorageMapper {
                     return true;
                 }
 
+                private String toLowerCaseIfImportEnabled(String value) {
+                    if (getLdapProvider().getModel().isImportEnabled()) {
+                        return value.toLowerCase();
+                    }
+                    return value;
+                }
             };
 
         } else if (isBinaryAttribute) {

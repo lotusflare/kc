@@ -19,7 +19,9 @@ include::../partials/blueprint-disclaimer.adoc[]
 
 == Two sites with low-latency connection
 
-Ensures that synchronous replication is available for both the database and the external {jdgserver_name}.
+{project_name} requires a low latency network connection for the synchronous replication of data by the database and the external {jdgserver_name}.
+
+include::../partials/network-latency.adoc[]
 
 *Suggested setup:* Two AWS Availability Zones within the same AWS Region.
 
@@ -32,7 +34,7 @@ Ensures that the instances are deployed and restarted as needed.
 
 *Suggested setup:* Red Hat OpenShift Service on AWS (ROSA) deployed in each availability zone.
 
-*Not considered:* A stretched ROSA cluster which spans multiple availability zones, as this could be a single point of failure if misconfigured.
+*Not considered:* A ROSA cluster which spans multiple availability zones, as this could be a single point of failure if misconfigured.
 
 == Database
 

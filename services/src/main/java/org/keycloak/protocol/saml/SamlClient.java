@@ -17,13 +17,14 @@
 
 package org.keycloak.protocol.saml;
 
-import org.jboss.logging.Logger;
 import org.keycloak.models.ClientConfigResolver;
 import org.keycloak.models.ClientModel;
 import org.keycloak.protocol.saml.util.ArtifactBindingUtils;
 import org.keycloak.saml.SignatureAlgorithm;
 import org.keycloak.saml.common.constants.JBossSAMLURIConstants;
 import org.keycloak.saml.common.util.XmlKeyInfoKeyNameTransformer;
+
+import org.jboss.logging.Logger;
 
 /**
  * Configuration of a SAML-enabled client.
@@ -39,6 +40,10 @@ public class SamlClient extends ClientConfigResolver {
 
     public SamlClient(ClientModel client) {
         super(client);
+    }
+
+    public ClientModel getClient() {
+        return client;
     }
 
     public String getCanonicalizationMethod() {
@@ -304,5 +309,25 @@ public class SamlClient extends ClientConfigResolver {
 
     public String getArtifactBindingIdentifier() {
         return client.getAttribute(SamlConfigAttributes.SAML_ARTIFACT_BINDING_IDENTIFIER);
+    }
+
+    public void setUseMetadataDescriptorUrl(Boolean useDescriptorUrl) {
+        if (useDescriptorUrl == null || !useDescriptorUrl) {
+            client.removeAttribute(SamlConfigAttributes.SAML_USE_METADATA_DESCRIPTOR_URL);
+        } else {
+            client.setAttribute(SamlConfigAttributes.SAML_USE_METADATA_DESCRIPTOR_URL, Boolean.toString(useDescriptorUrl));
+        }
+    }
+
+    public boolean isUseMetadataDescriptorUrl() {
+        return Boolean.parseBoolean(resolveAttribute(SamlConfigAttributes.SAML_USE_METADATA_DESCRIPTOR_URL));
+    }
+
+    public String getMetadataDescriptorUrl() {
+        return client.getAttribute(SamlConfigAttributes.SAML_METADATA_DESCRIPTOR_URL);
+    }
+
+    public void setMetadataDescriptorUrl(String metadataUrl) {
+        client.setAttribute(SamlConfigAttributes.SAML_METADATA_DESCRIPTOR_URL, metadataUrl);
     }
 }

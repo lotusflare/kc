@@ -16,18 +16,32 @@
  */
 package org.keycloak.services.resources.admin;
 
+import java.text.MessageFormat;
 import java.util.Arrays;
-import org.eclipse.microprofile.openapi.annotations.Operation;
-import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
-import org.eclipse.microprofile.openapi.annotations.extensions.Extension;
-import org.eclipse.microprofile.openapi.annotations.media.Content;
-import org.eclipse.microprofile.openapi.annotations.media.Schema;
-import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
-import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
-import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
-import org.eclipse.microprofile.openapi.annotations.tags.Tag;
-import org.jboss.logging.Logger;
-import org.jboss.resteasy.reactive.NoCache;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Properties;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.NotFoundException;
+import jakarta.ws.rs.POST;
+import jakarta.ws.rs.Path;
+import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.Produces;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.authorization.fgap.AdminPermissionsSchema;
 import org.keycloak.common.ClientConnection;
 import org.keycloak.common.Profile;
@@ -58,30 +72,17 @@ import org.keycloak.userprofile.UserProfileContext;
 import org.keycloak.userprofile.UserProfileProvider;
 import org.keycloak.utils.SearchQueryUtils;
 
-import jakarta.ws.rs.Consumes;
-import jakarta.ws.rs.ForbiddenException;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.NotFoundException;
-import jakarta.ws.rs.POST;
-import jakarta.ws.rs.Path;
-import jakarta.ws.rs.PathParam;
-import jakarta.ws.rs.Produces;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.Response;
-
-import java.text.MessageFormat;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.Properties;
-import java.util.Set;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import org.eclipse.microprofile.openapi.annotations.Operation;
+import org.eclipse.microprofile.openapi.annotations.enums.SchemaType;
+import org.eclipse.microprofile.openapi.annotations.extensions.Extension;
+import org.eclipse.microprofile.openapi.annotations.media.Content;
+import org.eclipse.microprofile.openapi.annotations.media.Schema;
+import org.eclipse.microprofile.openapi.annotations.parameters.Parameter;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponse;
+import org.eclipse.microprofile.openapi.annotations.responses.APIResponses;
+import org.eclipse.microprofile.openapi.annotations.tags.Tag;
+import org.jboss.logging.Logger;
+import org.jboss.resteasy.reactive.NoCache;
 
 import static org.keycloak.models.utils.KeycloakModelUtils.findGroupByPath;
 import static org.keycloak.userprofile.UserProfileContext.USER_API;
@@ -438,7 +439,8 @@ public class UsersResource {
             if (emailVerified != null) {
                 parameters.put(UserModel.EMAIL_VERIFIED, emailVerified.toString());
             }
-
+            // search /users equivalent to this doesn't include service-accounts so counting shouldn't as well
+            parameters.put(UserModel.INCLUDE_SERVICE_ACCOUNT, "false");
             if (userPermissionEvaluator.canView()) {
                 return session.users().getUsersCount(realm, parameters);
             } else {
@@ -448,7 +450,8 @@ public class UsersResource {
                     return session.users().getUsersCount(realm, parameters);
                 }
             }
-        } else if (last != null || first != null || email != null || username != null || emailVerified != null || enabled != null || !searchAttributes.isEmpty()) {
+        } else if (last != null || first != null || email != null || username != null || emailVerified != null
+                || idpAlias != null || idpUserId != null || enabled != null || exact != null || !searchAttributes.isEmpty()) {
             Map<String, String> parameters = new HashMap<>();
             if (last != null) {
                 parameters.put(UserModel.LAST_NAME, last);
@@ -478,7 +481,8 @@ public class UsersResource {
                 parameters.put(UserModel.EXACT, exact.toString());
             }
             parameters.putAll(searchAttributes);
-
+            // search /users equivalent to this does include service-accounts so we should be explicit
+            parameters.put(UserModel.INCLUDE_SERVICE_ACCOUNT, "true");
             if (userPermissionEvaluator.canView()) {
                 return session.users().getUsersCount(realm, parameters);
             } else {
@@ -488,13 +492,18 @@ public class UsersResource {
                     return session.users().getUsersCount(realm, parameters);
                 }
             }
-        } else if (userPermissionEvaluator.canView()) {
-            return session.users().getUsersCount(realm);
         } else {
-            if (Profile.isFeatureEnabled(Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ)) {
-                return session.users().getUsersCount(realm, auth.groups().getGroupIdsWithViewPermission());
+            Map<String, String> parameters = new HashMap<>();
+            // list /users equivalent to this doesn't include service-accounts so counting shouldn't as well
+            parameters.put(UserModel.INCLUDE_SERVICE_ACCOUNT, "false");
+            if (userPermissionEvaluator.canView()) {
+                return session.users().getUsersCount(realm, parameters);
             } else {
-                return session.users().getUsersCount(realm);
+                if (Profile.isFeatureEnabled(Profile.Feature.ADMIN_FINE_GRAINED_AUTHZ)) {
+                    return session.users().getUsersCount(realm, parameters, auth.groups().getGroupIdsWithViewPermission());
+                } else {
+                    return session.users().getUsersCount(realm, parameters);
+                }
             }
         }
     }
@@ -537,7 +546,7 @@ public class UsersResource {
         return userModels
                 .map(user -> {
                     UserProfile profile = provider.create(UserProfileContext.USER_API, user);
-                    UserRepresentation rep = profile.toRepresentation();
+                    UserRepresentation rep = profile.toRepresentation(!briefRepresentationB);
                     UserRepresentation userRep = briefRepresentationB ?
                             ModelToRepresentation.toBriefRepresentation(user, rep, false) :
                             ModelToRepresentation.toRepresentation(session, realm, user, rep, false);

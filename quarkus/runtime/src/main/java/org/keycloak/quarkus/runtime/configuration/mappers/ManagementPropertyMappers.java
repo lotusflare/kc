@@ -16,29 +16,34 @@
  */
 package org.keycloak.quarkus.runtime.configuration.mappers;
 
+import java.util.List;
+
 import org.keycloak.config.HealthOptions;
 import org.keycloak.config.HttpOptions;
 import org.keycloak.config.ManagementOptions;
 import org.keycloak.config.ManagementOptions.Scheme;
 import org.keycloak.config.MetricsOptions;
+import org.keycloak.config.OpenApiOptions;
 import org.keycloak.quarkus.runtime.configuration.Configuration;
 
 import static org.keycloak.config.ManagementOptions.LEGACY_OBSERVABILITY_INTERFACE;
 import static org.keycloak.quarkus.runtime.configuration.Configuration.isTrue;
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
-public class ManagementPropertyMappers {
+public class ManagementPropertyMappers implements PropertyMapperGrouping {
 
     private static final String HTTP_MANAGEMENT_SCHEME_IS_INHERITED = "http-management-scheme is inherited";
 
-    private ManagementPropertyMappers() {
-    }
-
-    public static PropertyMapper<?>[] getManagementPropertyMappers() {
-        return new PropertyMapper[]{
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
+        return List.of(
                 fromOption(ManagementOptions.HTTP_MANAGEMENT_ENABLED)
                         .to("quarkus.management.enabled")
                         .transformer((val, ctx) -> managementEnabledTransformer())
+                        .build(),
+                fromOption(ManagementOptions.HTTP_MANAGEMENT_HEALTH_ENABLED)
+                        .to("quarkus.smallrye-health.management.enabled")
+                        .isEnabled(() -> isTrue(HealthOptions.HEALTH_ENABLED), "health is enabled")
                         .build(),
                 fromOption(ManagementOptions.LEGACY_OBSERVABILITY_INTERFACE)
                         .build(),
@@ -114,16 +119,17 @@ public class ManagementPropertyMappers {
                         .mapFrom(HttpOptions.HTTPS_KEY_STORE_TYPE)
                         .to("quarkus.management.ssl.certificate.key-store-file-type")
                         .paramLabel("type")
-                        .build(),
-        };
+                        .build()
+        );
     }
 
     public static boolean isManagementEnabled() {
         if (isTrue(LEGACY_OBSERVABILITY_INTERFACE)) {
             return false;
         }
-        var isManagementOccupied = isTrue(HealthOptions.HEALTH_ENABLED) || isTrue(MetricsOptions.METRICS_ENABLED);
-        return isManagementOccupied;
+        return (isTrue(HealthOptions.HEALTH_ENABLED) && isTrue(ManagementOptions.HTTP_MANAGEMENT_HEALTH_ENABLED))
+            || isTrue(MetricsOptions.METRICS_ENABLED)
+            || isTrue(OpenApiOptions.OPENAPI_ENABLED);
     }
 
     private static String managementEnabledTransformer() {

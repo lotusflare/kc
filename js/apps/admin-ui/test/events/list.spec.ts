@@ -16,11 +16,12 @@ import {
   clickSearchPanel,
   enableSaveEvents,
   fillSearchPanel,
+  fillAdminEventsSearchPanel,
   goToAdminEventsTab,
   goToEventsConfig,
 } from "./list.ts";
 
-test.describe("Events tests", () => {
+test.describe.serial("Events tests", () => {
   const tableName = "Events";
   const realmName = `events-realm-${uuid()}`;
 
@@ -53,7 +54,7 @@ test.describe("Events tests", () => {
 
   test.afterAll(() => adminClient.deleteRealm(realmName));
 
-  test.describe("User events list empty", () => {
+  test.describe.serial("User events list empty", () => {
     test.beforeEach(async ({ page }) => {
       await login(page);
       await goToRealm(page, realmName);
@@ -67,7 +68,7 @@ test.describe("Events tests", () => {
     });
   });
 
-  test.describe("User events with events", () => {
+  test.describe.serial("User events with events", () => {
     let page: Page;
     test.beforeAll(async ({ browser }) => {
       page = await browser.newPage();
@@ -85,12 +86,11 @@ test.describe("Events tests", () => {
     });
 
     test.beforeEach(async ({ page }) => {
-      await login(
-        page,
-        eventsTestUser.userRepresentation.username,
-        eventsTestUser.userRepresentation.credentials[0].value,
-        realmName,
-      );
+      await login(page, {
+        realm: realmName,
+        username: eventsTestUser.userRepresentation.username,
+        password: eventsTestUser.userRepresentation.credentials[0].value,
+      });
       await goToEvents(page);
     });
 
@@ -120,6 +120,32 @@ test.describe("Events tests", () => {
     test("Check accessibility on admin events tab", async ({ page }) => {
       await goToAdminEventsTab(page);
       await assertAxeViolations(page);
+    });
+
+    test("creating user", async ({ page }) => {
+      const userToCreate = {
+        username: `my-user`,
+        enabled: true,
+        credentials: [{ value: "events-test" }],
+        realm: realmName,
+        email: "some-other@email.com",
+        firstName: "My",
+        lastName: "User",
+      };
+
+      await adminClient.createUser(userToCreate);
+
+      await goToAdminEventsTab(page);
+
+      await clickSearchPanel(page);
+      await assertSearchButtonDisabled(page);
+      await fillAdminEventsSearchPanel(page, {
+        resourceType: "USER",
+      });
+      await clickSearchButton(page);
+
+      await assertRowExists(page, "users/");
+      await assertRowExists(page, "users//", false); // Assert no trailing slash
     });
   });
 });

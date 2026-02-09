@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import { login } from "../support/actions.ts";
+import { assertLastAlert, login } from "../support/actions.ts";
 import { createTestBed } from "../support/testbed.ts";
 import userProfile from "./user-profile.json" with { type: "json" };
 import { adminClient } from "../support/admin-client.ts";
@@ -7,26 +7,28 @@ import userProfileRealm from "../realms/user-profile-realm.json" with { type: "j
 
 test.describe("Personal info", () => {
   test("sets basic information", async ({ page }) => {
-    const realm = await createTestBed();
+    await using testBed = await createTestBed();
 
-    await login(page, realm);
+    await login(page, testBed.realm);
 
     await page.getByTestId("email").fill("edewit@somewhere.com");
     await page.getByTestId("firstName").fill("Erik");
     await page.getByTestId("lastName").fill("de Wit");
     await page.getByTestId("save").click();
 
-    const alerts = page.getByTestId("last-alert");
-    await expect(alerts).toHaveText("Your account has been updated.");
+    await assertLastAlert(page, "Your account has been updated.");
   });
 });
 
 test.describe("Personal info (user profile enabled)", () => {
   test("renders user profile fields", async ({ page }) => {
-    const realm = await createTestBed(userProfileRealm);
+    await using testBed = await createTestBed(userProfileRealm);
 
-    await adminClient.users.updateProfile({ ...userProfile, realm });
-    await login(page, realm);
+    await adminClient.users.updateProfile({
+      ...userProfile,
+      realm: testBed.realm,
+    });
+    await login(page, testBed.realm);
 
     await expect(page.locator("#select")).toBeVisible();
     await expect(page.getByTestId("help-label-select")).toBeVisible();
@@ -37,10 +39,13 @@ test.describe("Personal info (user profile enabled)", () => {
   });
 
   test("renders long select options as typeahead", async ({ page }) => {
-    const realm = await createTestBed(userProfileRealm);
+    await using testBed = await createTestBed(userProfileRealm);
 
-    await adminClient.users.updateProfile({ ...userProfile, realm });
-    await login(page, realm);
+    await adminClient.users.updateProfile({
+      ...userProfile,
+      realm: testBed.realm,
+    });
+    await login(page, testBed.realm);
 
     await page.locator("#alternatelang").click();
     await page.waitForSelector("text=Italiano");
@@ -54,10 +59,13 @@ test.describe("Personal info (user profile enabled)", () => {
   });
 
   test("renders long list of locales as typeahead", async ({ page }) => {
-    const realm = await createTestBed(userProfileRealm);
+    await using testBed = await createTestBed(userProfileRealm);
 
-    await adminClient.users.updateProfile({ ...userProfile, realm });
-    await login(page, realm);
+    await adminClient.users.updateProfile({
+      ...userProfile,
+      realm: testBed.realm,
+    });
+    await login(page, testBed.realm);
 
     await page.locator("#attributes\\.locale").click();
     await page.waitForSelector("text=Italiano");
@@ -71,16 +79,20 @@ test.describe("Personal info (user profile enabled)", () => {
   });
 
   test("saves user profile", async ({ page }) => {
-    const realm = await createTestBed(userProfileRealm);
+    await using testBed = await createTestBed(userProfileRealm);
 
-    await adminClient.users.updateProfile({ ...userProfile, realm });
-    await login(page, realm);
+    await adminClient.users.updateProfile({
+      ...userProfile,
+      realm: testBed.realm,
+    });
+    await login(page, testBed.realm);
 
     await page.locator("#select").click();
     await page.getByRole("option", { name: "two" }).click();
     await page.getByTestId("email2").fill("non-valid");
     await page.getByTestId("save").click();
-    await expect(page.getByTestId("last-alert")).toHaveText(
+    await assertLastAlert(
+      page,
       "Could not update account due to validation errors",
     );
 
@@ -91,6 +103,7 @@ test.describe("Personal info (user profile enabled)", () => {
     await page.getByTestId("email2").clear();
     await page.getByTestId("email2").fill("valid@email.com");
     await page.getByTestId("save").click();
+    await assertLastAlert(page, "Your account has been updated.");
 
     await page.reload();
     await page.locator("delete-account").isVisible();
@@ -100,16 +113,18 @@ test.describe("Personal info (user profile enabled)", () => {
 
 test.describe("Realm localization", () => {
   test("changes locale", async ({ page }) => {
-    const realm = await createTestBed({
+    await using testBed = await createTestBed({
       internationalizationEnabled: true,
       supportedLocales: ["en", "nl", "de"],
     });
 
-    await login(page, realm);
+    await login(page, testBed.realm);
     await page.locator("#attributes\\.locale").click();
     page.getByRole("option").filter({ hasText: "Deutsch" });
     await page.getByRole("option", { name: "English" }).click();
     await page.getByTestId("save").click();
+    await assertLastAlert(page, "Your account has been updated.");
+
     await page.reload();
 
     expect(

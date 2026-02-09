@@ -28,17 +28,16 @@ import org.keycloak.common.Profile;
 import org.keycloak.compatibility.CompatibilityMetadataProvider;
 import org.keycloak.config.ConfigProviderFactory;
 import org.keycloak.quarkus.runtime.cli.PropertyException;
+
 import picocli.CommandLine;
 
-public abstract class AbstractUpdatesCommand extends AbstractStartCommand {
-
-    private static final int FEATURE_DISABLED_EXIT_CODE = 4;
+public abstract class AbstractUpdatesCommand extends AbstractAutoBuildCommand {
 
     @CommandLine.Mixin
     OptimizedMixin optimizedMixin = new OptimizedMixin();
 
     @Override
-    protected boolean shouldStart() {
+    public boolean shouldStart() {
         return false;
     }
 
@@ -100,6 +99,11 @@ public abstract class AbstractUpdatesCommand extends AbstractStartCommand {
                 .flatMap(ConfigProviderFactory::create)
                 .orElseThrow(() -> new RuntimeException("Failed to load Keycloak Configuration"));
         Config.init(configProvider);
+    }
+
+    @Override
+    protected OptimizedMixin getOptimizedMixin() {
+        return optimizedMixin;
     }
 
 }

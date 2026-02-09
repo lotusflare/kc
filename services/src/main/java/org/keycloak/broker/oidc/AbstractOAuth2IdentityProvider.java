@@ -16,16 +16,32 @@
  */
 package org.keycloak.broker.oidc;
 
-import com.fasterxml.jackson.annotation.JsonAnyGetter;
-import com.fasterxml.jackson.annotation.JsonAnySetter;
-import com.fasterxml.jackson.annotation.JsonProperty;
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import org.jboss.logging.Logger;
-import org.keycloak.common.util.SecretGenerator;
-import org.keycloak.crypto.KeyType;
-import org.keycloak.crypto.KeyUse;
-import org.keycloak.http.HttpRequest;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.security.cert.X509Certificate;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.SecretKeySpec;
+
+import jakarta.ws.rs.GET;
+import jakarta.ws.rs.QueryParam;
+import jakarta.ws.rs.WebApplicationException;
+import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.MultivaluedMap;
+import jakarta.ws.rs.core.Response;
+import jakarta.ws.rs.core.UriBuilder;
+import jakarta.ws.rs.core.UriInfo;
+
 import org.keycloak.OAuth2Constants;
 import org.keycloak.OAuthErrorException;
 import org.keycloak.broker.provider.AbstractIdentityProvider;
@@ -34,12 +50,14 @@ import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.broker.provider.ExchangeExternalToken;
 import org.keycloak.broker.provider.ExchangeTokenToIdentityProviderToken;
 import org.keycloak.broker.provider.IdentityBrokerException;
-import org.keycloak.broker.provider.IdentityProvider;
+import org.keycloak.broker.provider.UserAuthenticationIdentityProvider;
 import org.keycloak.broker.provider.util.IdentityBrokerState;
-import org.keycloak.broker.provider.util.SimpleHttp;
 import org.keycloak.common.ClientConnection;
+import org.keycloak.common.util.SecretGenerator;
 import org.keycloak.common.util.Time;
 import org.keycloak.crypto.Algorithm;
+import org.keycloak.crypto.KeyType;
+import org.keycloak.crypto.KeyUse;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.MacSignatureSignerContext;
 import org.keycloak.crypto.SignatureProvider;
@@ -48,6 +66,10 @@ import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
 import org.keycloak.events.EventType;
+import org.keycloak.http.HttpRequest;
+import org.keycloak.http.simple.SimpleHttp;
+import org.keycloak.http.simple.SimpleHttpRequest;
+import org.keycloak.http.simple.SimpleHttpResponse;
 import org.keycloak.jose.jwk.JWKBuilder;
 import org.keycloak.jose.jwk.RSAPublicJWK;
 import org.keycloak.jose.jws.JWSBuilder;
@@ -69,8 +91,8 @@ import org.keycloak.protocol.oidc.endpoints.TokenIntrospectionEndpoint;
 import org.keycloak.protocol.oidc.utils.PkceUtils;
 import org.keycloak.representations.AccessTokenResponse;
 import org.keycloak.representations.JsonWebToken;
-import org.keycloak.representations.oidc.TokenMetadataRepresentation;
 import org.keycloak.representations.idm.ErrorRepresentation;
+import org.keycloak.representations.oidc.TokenMetadataRepresentation;
 import org.keycloak.services.ErrorPage;
 import org.keycloak.services.ErrorResponseException;
 import org.keycloak.services.Urls;
@@ -78,35 +100,18 @@ import org.keycloak.services.managers.ClientSessionCode;
 import org.keycloak.services.messages.Messages;
 import org.keycloak.services.resources.RealmsResource;
 import org.keycloak.sessions.AuthenticationSessionModel;
-import org.keycloak.util.JsonSerialization;
 import org.keycloak.urls.UrlType;
+import org.keycloak.util.Booleans;
+import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 import org.keycloak.vault.VaultStringSecret;
 
-import javax.crypto.SecretKey;
-import javax.crypto.spec.SecretKeySpec;
-import jakarta.ws.rs.GET;
-import jakarta.ws.rs.QueryParam;
-import jakarta.ws.rs.WebApplicationException;
-import jakarta.ws.rs.core.HttpHeaders;
-import jakarta.ws.rs.core.MediaType;
-import jakarta.ws.rs.core.MultivaluedMap;
-import jakarta.ws.rs.core.Response;
-import jakarta.ws.rs.core.UriBuilder;
-import jakarta.ws.rs.core.UriInfo;
-import java.io.IOException;
-import java.net.URI;
-import java.net.URLEncoder;
-import java.nio.charset.StandardCharsets;
-import java.security.cert.X509Certificate;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonAnySetter;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.jboss.logging.Logger;
 
 /**
  * @author Pedro Igor
@@ -194,11 +199,11 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
             this.token = token;
         }
 
-        public long getExpiresIn() {
+        public Long getExpiresIn() {
             return expiresIn;
         }
 
-        public void setExpiresIn(long expiresIn) {
+        public void setExpiresIn(Long expiresIn) {
             this.expiresIn = expiresIn;
         }
 
@@ -210,11 +215,11 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
             this.refreshToken = refreshToken;
         }
 
-        public long getRefreshExpiresIn() {
+        public Long getRefreshExpiresIn() {
             return refreshExpiresIn;
         }
 
-        public void setRefreshExpiresIn(long refreshExpiresIn) {
+        public void setRefreshExpiresIn(Long refreshExpiresIn) {
             this.refreshExpiresIn = refreshExpiresIn;
         }
 
@@ -254,7 +259,7 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
                 Long exp = previousResponse.getAccessTokenExpiration();
                 if (needsRefresh(exp) && previousResponse.getRefreshToken() != null) {
                     OAuthResponse newResponse = refreshToken(previousResponse, session);
-                    if (newResponse.getExpiresIn() > 0) {
+                    if (newResponse.getExpiresIn() != null && newResponse.getExpiresIn() > 0) {
                         long accessTokenExpiration = Time.currentTime() + newResponse.getExpiresIn();
                         newResponse.setAccessTokenExpiration(accessTokenExpiration);
                     }
@@ -274,8 +279,8 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
         return exp != null && exp != 0 && exp < Time.currentTime() + getConfig().getMinValidityToken();
     }
 
-    protected SimpleHttp getRefreshTokenRequest(KeycloakSession session, String refreshToken, String clientId, String clientSecret) {
-        SimpleHttp refreshTokenRequest = SimpleHttp.doPost(getConfig().getTokenUrl(), session)
+    protected SimpleHttpRequest getRefreshTokenRequest(KeycloakSession session, String refreshToken, String clientId, String clientSecret) {
+        SimpleHttpRequest refreshTokenRequest = SimpleHttp.create(session).doPost(getConfig().getTokenUrl())
                 .param(OAUTH2_GRANT_TYPE_REFRESH_TOKEN, refreshToken)
                 .param(OAUTH2_PARAMETER_GRANT_TYPE, OAUTH2_GRANT_TYPE_REFRESH_TOKEN);
         return authenticateTokenRequest(refreshTokenRequest);
@@ -283,8 +288,8 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
 
     private OAuthResponse refreshToken(OAuthResponse previousResponse, KeycloakSession session) throws IOException {
         try (VaultStringSecret vaultStringSecret = session.vault().getStringSecret(getConfig().getClientSecret())) {
-            SimpleHttp refreshTokenRequest = getRefreshTokenRequest(session, previousResponse.getRefreshToken(), getConfig().getClientId(), vaultStringSecret.get().orElse(getConfig().getClientSecret()));
-            try (SimpleHttp.Response refreshTokenResponse = refreshTokenRequest.asResponse()) {
+            SimpleHttpRequest refreshTokenRequest = getRefreshTokenRequest(session, previousResponse.getRefreshToken(), getConfig().getClientId(), vaultStringSecret.get().orElse(getConfig().getClientSecret()));
+            try (SimpleHttpResponse refreshTokenResponse = refreshTokenRequest.asResponse()) {
                 String response = refreshTokenResponse.asString();
                 if (response.contains("error")) {
                     ErrorRepresentation error = new ErrorRepresentation();
@@ -355,10 +360,10 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
             event.error(Errors.INVALID_REQUEST);
             return exchangeUnsupportedRequiredType();
         }
-        if (!getConfig().isStoreToken()) {
+        if (Booleans.isFalse(getConfig().isStoreToken())) {
             // if token isn't stored, we need to see if this session has been linked
             String brokerId = tokenUserSession.getNote(Details.IDENTITY_PROVIDER);
-            brokerId = brokerId == null ? tokenUserSession.getNote(IdentityProvider.EXTERNAL_IDENTITY_PROVIDER) : brokerId;
+            brokerId = brokerId == null ? tokenUserSession.getNote(UserAuthenticationIdentityProvider.EXTERNAL_IDENTITY_PROVIDER) : brokerId;
             if (brokerId == null || !brokerId.equals(getConfig().getAlias())) {
                 event.detail(Details.REASON, "requested_issuer has not linked");
                 event.error(Errors.INVALID_REQUEST);
@@ -472,10 +477,10 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
 
         BrokeredIdentityContext context = doGetFederatedIdentity(accessToken);
 
-        if (getConfig().isStoreToken() && response.startsWith("{")) {
+        if (Booleans.isTrue(getConfig().isStoreToken()) && response.startsWith("{")) {
             try {
                 OAuthResponse tokenResponse = JsonSerialization.readValue(response, OAuthResponse.class);
-                if (tokenResponse.getExpiresIn() > 0) {
+                if (tokenResponse.getExpiresIn() != null && tokenResponse.getExpiresIn() > 0) {
                     long accessTokenExpiration = Time.currentTime() + tokenResponse.getExpiresIn();
                     tokenResponse.setAccessTokenExpiration(accessTokenExpiration);
                     response = JsonSerialization.writeValueAsString(tokenResponse);
@@ -510,7 +515,7 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
         AuthenticationSessionModel authenticationSession = request.getAuthenticationSession();
         String loginHint = authenticationSession.getClientNote(OIDCLoginProtocol.LOGIN_HINT_PARAM);
 
-        if (getConfig().isLoginHint() && loginHint != null) {
+        if (Booleans.isTrue(getConfig().isLoginHint()) && loginHint != null) {
             uriBuilder.queryParam(OIDCLoginProtocol.LOGIN_HINT_PARAM, loginHint);
         }
 
@@ -526,8 +531,6 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
             uriBuilder.queryParam(OAuth2Constants.PROMPT, prompt);
         }
 
-        setForwardParameters(authenticationSession, uriBuilder);
-
         if (getConfig().isPkceEnabled()) {
             String codeVerifier = PkceUtils.generateCodeVerifier();
             String codeChallengeMethod = getConfig().getPkceMethod();
@@ -539,26 +542,35 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
             uriBuilder.queryParam(OAuth2Constants.CODE_CHALLENGE_METHOD, codeChallengeMethod);
         }
 
+        appendForwardedParameters(authenticationSession, uriBuilder);
+
         return uriBuilder;
     }
 
-    private void setForwardParameters(AuthenticationSessionModel authenticationSession, UriBuilder uriBuilder) {
+    private void appendForwardedParameters(AuthenticationSessionModel authenticationSession, UriBuilder uriBuilder) {
         C config = getConfig();
         String forwardParameterConfig = config.getForwardParameters() != null ? config.getForwardParameters(): OAuth2Constants.ACR_VALUES;
+        List<String> parameterNames = List.of(forwardParameterConfig.split("\\s*,\\s*"));
+        StringBuilder query = new StringBuilder(uriBuilder.build().getRawQuery());
 
-        for (String forwardParameter: List.of(forwardParameterConfig.split("\\s*,\\s*"))) {
-            String name = AuthorizationEndpoint.LOGIN_SESSION_NOTE_ADDITIONAL_REQ_PARAMS_PREFIX + forwardParameter.trim();
-            String parameter = authenticationSession.getClientNote(name);
+        for (String name: parameterNames) {
+            String noteKey = AuthorizationEndpoint.LOGIN_SESSION_NOTE_ADDITIONAL_REQ_PARAMS_PREFIX + name.trim();
+            String value = authenticationSession.getClientNote(noteKey);
 
-            if (parameter == null) {
+            if (value == null) {
                 // try a value set as a client note
-                parameter = authenticationSession.getClientNote(forwardParameter);
+                value = authenticationSession.getClientNote(name);
             }
 
-            if (parameter != null && !parameter.isEmpty()) {
-                uriBuilder.queryParam(forwardParameter, URLEncoder.encode(parameter, StandardCharsets.UTF_8));
+            if (value != null && !value.isEmpty()) {
+                if (!query.isEmpty()) {
+                    query.append("&");
+                }
+                query.append(name).append("=").append(URLEncoder.encode(value, StandardCharsets.UTF_8));
             }
         }
+
+        uriBuilder.replaceQuery(query.toString());
     }
 
     /**
@@ -592,7 +604,7 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
         if (token != null) authSession.setUserSessionNote(FEDERATED_ACCESS_TOKEN, token);
     }
 
-    public SimpleHttp authenticateTokenRequest(final SimpleHttp tokenRequest) {
+    public SimpleHttpRequest authenticateTokenRequest(final SimpleHttpRequest tokenRequest) {
 
         if (getConfig().isJWTAuthentication()) {
             String sha1x509Thumbprint = null;
@@ -620,6 +632,11 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
         } else {
             try (VaultStringSecret vaultStringSecret = session.vault().getStringSecret(getConfig().getClientSecret())) {
                 if (getConfig().isBasicAuthentication()) {
+                    String clientSecret = vaultStringSecret.get().orElse(getConfig().getClientSecret());
+                    String header = org.keycloak.util.BasicAuthHelper.RFC6749.createHeader(getConfig().getClientId(), clientSecret);
+                    return tokenRequest.header(HttpHeaders.AUTHORIZATION, header);
+                }
+                if (getConfig().isBasicAuthenticationUnencoded()) {
                     return tokenRequest.authBasic(getConfig().getClientId(), vaultStringSecret.get().orElse(getConfig().getClientSecret()));
                 }
                 return tokenRequest
@@ -722,9 +739,9 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
                     return errorIdentityProviderLogin(Messages.IDENTITY_PROVIDER_MISSING_CODE_OR_ERROR_ERROR);
                 }
 
-                SimpleHttp simpleHttp = generateTokenRequest(authorizationCode);
+                SimpleHttpRequest simpleHttp = generateTokenRequest(authorizationCode);
                 String response;
-                try (SimpleHttp.Response simpleResponse = simpleHttp.asResponse()) {
+                try (SimpleHttpResponse simpleResponse = simpleHttp.asResponse()) {
                     int status = simpleResponse.getStatus();
                     boolean success = status >= 200 && status < 400;
                     response = simpleResponse.asString();
@@ -738,7 +755,7 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
 
                 BrokeredIdentityContext federatedIdentity = provider.getFederatedIdentity(response);
 
-                if (providerConfig.isStoreToken()) {
+                if (Booleans.isTrue(providerConfig.isStoreToken())) {
                     // make sure that token wasn't already set by getFederatedIdentity();
                     // want to be able to allow provider to set the token itself.
                     if (federatedIdentity.getToken() == null)federatedIdentity.setToken(response);
@@ -775,10 +792,10 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
             return ErrorPage.error(session, null, Response.Status.BAD_GATEWAY, message);
         }
 
-        public SimpleHttp generateTokenRequest(String authorizationCode) {
+        public SimpleHttpRequest generateTokenRequest(String authorizationCode) {
             KeycloakContext context = session.getContext();
             OAuth2IdentityProviderConfig providerConfig = provider.getConfig();
-            SimpleHttp tokenRequest = SimpleHttp.doPost(providerConfig.getTokenUrl(), session)
+            SimpleHttpRequest tokenRequest = SimpleHttp.create(session).doPost(providerConfig.getTokenUrl())
                     .param(OAUTH2_PARAMETER_CODE, authorizationCode)
                     .param(OAUTH2_PARAMETER_REDIRECT_URI, Urls.identityProviderAuthnResponse(context.getUri().getBaseUri(),
                             providerConfig.getAlias(), context.getRealm().getName()).toString())
@@ -838,7 +855,7 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
     protected BrokeredIdentityContext validateExternalTokenThroughUserInfo(EventBuilder event, String subjectToken, String subjectTokenType) {
         event.detail("validation_method", "user info");
 
-        SimpleHttp.Response response = null;
+        SimpleHttpResponse response = null;
         int status = 0;
         try {
             String userInfoUrl = getProfileEndpointForValidation(event);
@@ -870,8 +887,8 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
         return context;
     }
 
-    protected SimpleHttp buildUserInfoRequest(String subjectToken, String userInfoUrl) {
-        return SimpleHttp.doGet(userInfoUrl, session)
+    protected SimpleHttpRequest buildUserInfoRequest(String subjectToken, String userInfoUrl) {
+        return SimpleHttp.create(session).doGet(userInfoUrl)
                   .header("Authorization", "Bearer " + subjectToken);
     }
 
@@ -997,12 +1014,12 @@ public abstract class AbstractOAuth2IdentityProvider<C extends OAuth2IdentityPro
         try {
 
             // Supporting only access-tokens for now
-            SimpleHttp introspectionRequest = SimpleHttp.doPost(introspectionEndointUrl, session)
+            SimpleHttpRequest introspectionRequest = SimpleHttp.create(session).doPost(introspectionEndointUrl)
                     .param(TokenIntrospectionEndpoint.PARAM_TOKEN, idpAccessToken)
                     .param(TokenIntrospectionEndpoint.PARAM_TOKEN_TYPE_HINT, AccessTokenIntrospectionProviderFactory.ACCESS_TOKEN_TYPE);
             introspectionRequest = authenticateTokenRequest(introspectionRequest);
 
-            try (SimpleHttp.Response introspectionResponse = introspectionRequest.asResponse()) {
+            try (SimpleHttpResponse introspectionResponse = introspectionRequest.asResponse()) {
                 int status = introspectionResponse.getStatus();
 
                 if (status != 200) {

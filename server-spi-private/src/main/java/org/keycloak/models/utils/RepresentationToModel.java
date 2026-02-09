@@ -37,12 +37,11 @@ import java.util.function.Supplier;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import org.jboss.logging.Logger;
 import org.keycloak.Config;
 import org.keycloak.OAuth2Constants;
-import org.keycloak.authorization.fgap.AdminPermissionsSchema;
 import org.keycloak.authorization.AuthorizationProvider;
 import org.keycloak.authorization.AuthorizationProviderFactory;
+import org.keycloak.authorization.fgap.AdminPermissionsSchema;
 import org.keycloak.authorization.model.PermissionTicket;
 import org.keycloak.authorization.model.Policy;
 import org.keycloak.authorization.model.Resource;
@@ -132,7 +131,10 @@ import org.keycloak.storage.DatastoreProvider;
 import org.keycloak.util.JsonSerialization;
 import org.keycloak.utils.StringUtil;
 
+import org.jboss.logging.Logger;
+
 import static java.util.Optional.ofNullable;
+
 import static org.keycloak.models.OrganizationDomainModel.ANY_DOMAIN;
 import static org.keycloak.protocol.saml.util.ArtifactBindingUtils.computeArtifactBindingIdentifierString;
 
@@ -196,6 +198,9 @@ public class RepresentationToModel {
 
     public static void importGroup(RealmModel realm, GroupModel parent, GroupRepresentation group) {
         GroupModel newGroup = realm.createGroup(group.getId(), group.getName(), parent);
+        if (group.getDescription() != null) {
+            newGroup.setDescription(group.getDescription());
+        }
         if (group.getAttributes() != null) {
             for (Map.Entry<String, List<String>> attr : group.getAttributes().entrySet()) {
                 newGroup.setAttribute(attr.getKey(), attr.getValue());
@@ -882,7 +887,15 @@ public class RepresentationToModel {
         identityProviderModel.setAddReadTokenRoleOnCreate(representation.isAddReadTokenRoleOnCreate());
         updateOrganizationBroker(representation, session);
         identityProviderModel.setOrganizationId(representation.getOrganizationId());
-        identityProviderModel.setConfig(removeEmptyString(representation.getConfig()));
+
+        // Merge config from the identity provider model in case the provider sets some default config
+        Map<String, String> repConfig = removeEmptyString(representation.getConfig());
+        if (repConfig != null && !repConfig.isEmpty()) {
+            if (identityProviderModel.getConfig() == null) {
+                identityProviderModel.setConfig(new HashMap<>());
+            }
+            identityProviderModel.getConfig().putAll(repConfig);
+        }
 
         String flowAlias = representation.getFirstBrokerLoginFlowAlias();
         if (flowAlias == null || flowAlias.trim().isEmpty()) {

@@ -17,16 +17,16 @@
 
 package org.keycloak.it.cli.dist;
 
-import org.junit.jupiter.api.Tag;
-import org.junit.jupiter.api.Test;
 import org.keycloak.it.junit5.extension.CLIResult;
 import org.keycloak.it.junit5.extension.DistributionTest;
 import org.keycloak.it.junit5.extension.RawDistOnly;
 import org.keycloak.it.junit5.extension.TestProvider;
-import com.acme.provider.legacy.jpa.entity.CustomJpaEntityProvider;
-
-import io.quarkus.test.junit.main.Launch;
 import org.keycloak.it.utils.KeycloakDistribution;
+
+import com.acme.provider.legacy.jpa.entity.CustomJpaEntityProvider;
+import io.quarkus.test.junit.main.Launch;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 @DistributionTest
 @RawDistOnly(reason = "Containers are immutable")
@@ -61,7 +61,7 @@ public class CustomJpaEntityProviderDistTest {
     }
 
     @Test
-    @Launch({"start-dev", "--db=dev-file", "--log-level=org.hibernate.jpa.internal.util.LogHelper:debug,org.keycloak.quarkus.deployment.KeycloakProcessor:debug", "--db-kind-new-user-store=dev-mem", "--db-kind-client-store=dev-file", "--db-kind-pu-without-dialect-store=dev-mem"})
+    @Launch({"start-dev", "--db=dev-file", "--log-level=org.hibernate.orm.jpa:debug,org.keycloak.quarkus.deployment.KeycloakProcessor:debug", "--db-kind-new-user-store=dev-mem", "--db-kind-client-store=dev-file", "--db-kind-pu-without-dialect-store=dev-mem"})
     void testUserManagedEntityNotAddedToDefaultPU(CLIResult cliResult) {
         cliResult.assertMessage(MULTIPLE_DATASOURCES_MSG);
         cliResult.assertMessage("Datasource name 'client-store' is obtained from the 'Persistence unit name' configuration property in persistence.xml file. Use 'client-store' name for datasource options like 'db-kind-client-store'.");

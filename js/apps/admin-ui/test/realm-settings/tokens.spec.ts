@@ -13,10 +13,12 @@ import {
   populateTokensPage,
 } from "./tokens.ts";
 
-test.describe("Realm Settings - Tokens", () => {
+test.describe.serial("Realm Settings - Tokens", () => {
   const realmName = `tokens-realm-settings-${uuid()}`;
 
-  test.beforeAll(() => adminClient.createRealm(realmName));
+  test.beforeAll(() =>
+    adminClient.createRealm(realmName, { verifiableCredentialsEnabled: true }),
+  );
   test.afterAll(() => adminClient.deleteRealm(realmName));
 
   test.beforeEach(async ({ page }) => {

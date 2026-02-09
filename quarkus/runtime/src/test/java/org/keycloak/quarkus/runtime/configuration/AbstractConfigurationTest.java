@@ -17,30 +17,27 @@
 
 package org.keycloak.quarkus.runtime.configuration;
 
+import java.nio.file.Paths;
+import java.util.Map;
+import java.util.Properties;
+import java.util.function.Function;
+
+import org.keycloak.Config;
+import org.keycloak.quarkus.runtime.Environment;
+import org.keycloak.quarkus.runtime.KeycloakMain;
+
+import io.smallrye.config.ConfigValue;
+import io.smallrye.config.ConfigValue.ConfigValueBuilder;
+import io.smallrye.config.SmallRyeConfig;
+import org.junit.After;
+import org.junit.BeforeClass;
+
 import static org.hamcrest.CoreMatchers.is;
 import static org.hamcrest.CoreMatchers.notNullValue;
 import static org.hamcrest.CoreMatchers.nullValue;
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
-
-import java.nio.file.Paths;
-import java.util.Map;
-import java.util.Properties;
-import java.util.function.Function;
-
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.BeforeClass;
-import org.keycloak.Config;
-import org.keycloak.common.Profile;
-import org.keycloak.quarkus.runtime.Environment;
-import org.keycloak.quarkus.runtime.cli.ExecutionExceptionHandler;
-import org.keycloak.quarkus.runtime.configuration.mappers.PropertyMappers;
-
-import io.smallrye.config.ConfigValue;
-import io.smallrye.config.ConfigValue.ConfigValueBuilder;
-import io.smallrye.config.SmallRyeConfig;
 
 public abstract class AbstractConfigurationTest {
 
@@ -72,27 +69,14 @@ public abstract class AbstractConfigurationTest {
 
     @BeforeClass
     public static void resetConfiguration() {
-        System.setProperties((Properties) SYSTEM_PROPERTIES.clone());
+        KeycloakMain.reset(SYSTEM_PROPERTIES);
         Environment.setHomeDir(Paths.get("src/test/resources/"));
-
         KcEnvConfigSource.ENV_OVERRIDE.clear();
-
-        PropertyMappers.reset();
-        ConfigArgsConfigSource.setCliArgs();
-        PersistedConfigSource.getInstance().getConfigValueProperties().clear();
-        Profile.reset();
-        Configuration.resetConfig();
-        ExecutionExceptionHandler.resetExceptionTransformers();
     }
 
     @After
     public void onAfter() {
         resetConfiguration();
-    }
-
-    @AfterClass
-    public static void afterAll() {
-        Environment.removeHomeDir();
     }
 
     protected static Config.Scope initConfig(String... scope) {

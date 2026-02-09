@@ -1,12 +1,15 @@
 package org.keycloak.config;
 
-import org.keycloak.config.database.Database;
-
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
+
+import org.keycloak.config.database.Database;
+
+import static org.keycloak.config.OptionsUtil.DURATION_DESCRIPTION;
+import static org.keycloak.config.WildcardOptionsUtil.getWildcardNamedKey;
 
 public class DatabaseOptions {
 
@@ -87,6 +90,11 @@ public class DatabaseOptions {
             .category(OptionCategory.DATABASE)
             .defaultValue(100)
             .description("The maximum size of the connection pool.")
+            .build();
+
+    public static final Option<String> DB_POOL_MAX_LIFETIME = new OptionBuilder<>("db-pool-max-lifetime", String.class)
+            .category(OptionCategory.DATABASE)
+            .description("The maximum time a connection remains in the pool, after which it will be closed upon return and replaced as necessary. " + DURATION_DESCRIPTION)
             .build();
 
     public static final Option<Boolean> DB_SQL_JPA_DEBUG = new OptionBuilder<>("db-debug-jpql", Boolean.class)
@@ -199,6 +207,7 @@ public class DatabaseOptions {
                 }
 
                 option = builder.build();
+                parentOption.setWildcardKey(option.getKey());
                 cachedDatasourceOptions.put(key.get(), option);
             }
             return Optional.of((Option<T>) option);
@@ -230,9 +239,7 @@ public class DatabaseOptions {
          * Result: {@code db-driver-my-store}
          */
         public static Optional<String> getNamedKey(Option<?> option, String namedProperty) {
-            return getKeyForDatasource(option)
-                    .map(key -> key.substring(0, key.indexOf("<")))
-                    .map(key -> key.concat(namedProperty));
+            return getKeyForDatasource(option).map(key -> getWildcardNamedKey(key, namedProperty));
         }
     }
 }

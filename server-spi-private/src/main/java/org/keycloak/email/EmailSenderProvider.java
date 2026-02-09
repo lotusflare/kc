@@ -17,15 +17,17 @@
 
 package org.keycloak.email;
 
+import java.util.Map;
+
 import org.keycloak.models.UserModel;
 import org.keycloak.provider.Provider;
-
-import java.util.Map;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
  */
 public interface EmailSenderProvider extends Provider {
+
+    String CONFIG_ALLOW_UTF8 = "allowutf8";
 
     default void send(Map<String, String> config, UserModel user, String subject, String textBody, String htmlBody) throws EmailException {
         send(config, user.getEmail(), subject, textBody, htmlBody);

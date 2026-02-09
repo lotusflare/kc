@@ -1,9 +1,15 @@
 package org.keycloak.tests.admin.user;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.stream.Collectors;
+
 import jakarta.ws.rs.core.Response;
-import org.apache.commons.lang3.RandomStringUtils;
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Test;
+
 import org.keycloak.admin.client.resource.UserProfileResource;
 import org.keycloak.models.UserModel;
 import org.keycloak.representations.idm.ClientRepresentation;
@@ -13,17 +19,13 @@ import org.keycloak.representations.idm.UserRepresentation;
 import org.keycloak.representations.userprofile.config.UPConfig;
 import org.keycloak.testframework.annotations.KeycloakIntegrationTest;
 import org.keycloak.testframework.realm.UserConfigBuilder;
-import org.keycloak.tests.utils.admin.ApiUtil;
+import org.keycloak.testframework.util.ApiUtil;
 import org.keycloak.userprofile.DefaultAttributes;
 import org.keycloak.userprofile.validator.UsernameProhibitedCharactersValidator;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
-import java.util.stream.Collectors;
+import org.apache.commons.lang3.RandomStringUtils;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.Test;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.Matchers.contains;
@@ -785,5 +787,70 @@ public class UserSearchTest extends AbstractUserTest {
 
         users = managedRealm.admin().users().search("username", 0, 20);
         assertEquals(9, users.size());
+    }
+
+    @Test
+    public void testCountAndSearchConsistencyWithMissingParameters() {
+        createUser("user1", "user1@example.com");
+
+        // Count users before creating service account (should be 1 regular user)
+        Integer countBefore = managedRealm.admin().users().count(null, null, null, null, null, null, null, null, null, true, null);
+        assertEquals(1, countBefore.intValue(), "Should have 1 regular user before service account creation");
+
+        ClientRepresentation client = new ClientRepresentation();
+        client.setClientId("service-account-client");
+        client.setServiceAccountsEnabled(true);
+        client.setEnabled(true);
+        client.setPublicClient(false);
+        client.setSecret("secret");
+        client.setRedirectUris(Arrays.asList("http://localhost"));
+
+        String clientId = ApiUtil.getCreatedId(managedRealm.admin().clients().create(client));
+        
+        // Count users after creating service account (should be 2: 1 regular + 1 service account)
+        Integer countAfter = managedRealm.admin().users().count(null, null, null, null, null, null, null, null, null, true, null);
+        assertEquals(2, countAfter.intValue(), "Should have 2 users after service account creation (1 regular + 1 service account)");
+
+        // exact=true inconsistency with service accounts
+        Integer count = managedRealm.admin().users().count(null, null, null, null, null, null, null, null, null, true, null);
+        List<UserRepresentation> users = managedRealm.admin().users().search(null, null, null, null, 0, 10, null, null, true);
+        assertEquals(count.intValue(), users.size(), "Count and search should return same number with exact=true");
+
+        // idpAlias parameter with service account inclusion inconsistency
+        Integer countWithIdp = managedRealm.admin().users().count(null, null, null, null, null, null, null, "nonexistent-idp", null, null);
+        List<UserRepresentation> usersWithIdp = managedRealm.admin().users().search(null, null, null, null, null, "nonexistent-idp", null, 0, 10, null, null);
+        assertEquals(countWithIdp.intValue(), usersWithIdp.size(), "Count and search should return same number with idpAlias parameter");
+
+        // idpUserId parameter with same inconsistency
+        Integer countWithIdpUserId = managedRealm.admin().users().count(null, null, null, null, null, null, null, null, "nonexistent-user-id", null);
+        List<UserRepresentation> usersWithIdpUserId = managedRealm.admin().users().search(null, null, null, null, null, null, "nonexistent-user-id", 0, 10, null, null);
+        assertEquals(countWithIdpUserId.intValue(), usersWithIdpUserId.size(), "Count and search should return same number with idpUserId parameter");
+        
+        managedRealm.admin().clients().get(clientId).remove();
+    }
+
+    @Test
+    public void testCountAndSearchConsistencyWithIdpParameters() {
+        createUser("user1", "user1@example.com");
+        createUser("user2", "user2@example.com");
+
+        addSampleIdentityProvider("test-idp", 0);
+        
+        // Link only user1 to the IDP
+        String user1Id = managedRealm.admin().users().search("user1").get(0).getId();
+        FederatedIdentityRepresentation link = new FederatedIdentityRepresentation();
+        link.setUserId("external-user-id");
+        link.setUserName("user1");
+        addFederatedIdentity(user1Id, "test-idp", link);
+
+        // search with idpAlias should return 1 user, count should also return 1
+        Integer countWithIdpAlias = managedRealm.admin().users().count(null, null, null, null, null, null, null, "test-idp", null, null);
+        List<UserRepresentation> usersWithIdpAlias = managedRealm.admin().users().search(null, null, null, null, null, "test-idp", null, 0, 10, null, null);
+        assertEquals(countWithIdpAlias.intValue(), usersWithIdpAlias.size(), "Count and search should return same number with idpAlias parameter");
+        
+        // search with idpUserId should return 1 user, count should also return 1
+        Integer countWithIdpUserId = managedRealm.admin().users().count(null, null, null, null, null, null, null, null, "external-user-id", null);
+        List<UserRepresentation> usersWithIdpUserId = managedRealm.admin().users().search(null, null, null, null, null, null, "external-user-id", 0, 10, null, null);
+        assertEquals(countWithIdpUserId.intValue(), usersWithIdpUserId.size(), "Count and search should return same number with idpUserId parameter");
     }
 }

@@ -17,13 +17,11 @@
 
 package org.keycloak.protocol.oid4vc.model;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.annotation.JsonProperty;
-
-import java.util.Collections;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 /**
  * Represents a credentials issuer according to the OID4VCI Credentials Issuer Metadata
@@ -49,14 +47,8 @@ public class CredentialIssuer {
     @JsonProperty("authorization_servers")
     private List<String> authorizationServers;
 
-    @JsonProperty("notification_endpoint")
-    private String notificationEndpoint;
-
     @JsonProperty("batch_credential_issuance")
     private BatchCredentialIssuance batchCredentialIssuance;
-
-    @JsonProperty("signed_metadata")
-    private String signedMetadata;
 
     @JsonProperty("credential_configurations_supported")
     private Map<String, SupportedCredentialConfiguration> credentialsSupported;
@@ -66,6 +58,9 @@ public class CredentialIssuer {
 
     @JsonProperty("credential_response_encryption")
     private CredentialResponseEncryptionMetadata credentialResponseEncryption;
+
+    @JsonProperty("credential_request_encryption")
+    private CredentialRequestEncryptionMetadata credentialRequestEncryption;
 
     public String getCredentialIssuer() {
         return credentialIssuer;
@@ -112,30 +107,12 @@ public class CredentialIssuer {
         return this;
     }
 
-    public String getNotificationEndpoint() {
-        return notificationEndpoint;
-    }
-
-    public CredentialIssuer setNotificationEndpoint(String notificationEndpoint) {
-        this.notificationEndpoint = notificationEndpoint;
-        return this;
-    }
-
     public BatchCredentialIssuance getBatchCredentialIssuance() {
         return batchCredentialIssuance;
     }
 
     public CredentialIssuer setBatchCredentialIssuance(BatchCredentialIssuance batchCredentialIssuance) {
         this.batchCredentialIssuance = batchCredentialIssuance;
-        return this;
-    }
-
-    public String getSignedMetadata() {
-        return signedMetadata;
-    }
-
-    public CredentialIssuer setSignedMetadata(String signedMetadata) {
-        this.signedMetadata = signedMetadata;
         return this;
     }
 
@@ -147,7 +124,8 @@ public class CredentialIssuer {
         if (credentialsSupported == null) {
             throw new IllegalArgumentException("credentialsSupported cannot be null");
         }
-        this.credentialsSupported = Collections.unmodifiableMap(new HashMap<>(credentialsSupported));
+        credentialsSupported.forEach((k, v) -> v.setId(k));
+        this.credentialsSupported = Map.copyOf(credentialsSupported);
         return this;
     }
 
@@ -166,6 +144,15 @@ public class CredentialIssuer {
 
     public CredentialIssuer setCredentialResponseEncryption(CredentialResponseEncryptionMetadata credentialResponseEncryption) {
         this.credentialResponseEncryption = credentialResponseEncryption;
+        return this;
+    }
+
+    public CredentialRequestEncryptionMetadata getCredentialRequestEncryption() {
+        return credentialRequestEncryption;
+    }
+
+    public CredentialIssuer setCredentialRequestEncryption(CredentialRequestEncryptionMetadata credentialRequestEncryption) {
+        this.credentialRequestEncryption = credentialRequestEncryption;
         return this;
     }
 

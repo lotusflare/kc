@@ -17,11 +17,18 @@
 
 package org.keycloak.testsuite.federation.ldap;
 
-import org.junit.Assert;
-import org.junit.ClassRule;
-import org.junit.FixMethodOrder;
-import org.junit.Test;
-import org.junit.runners.MethodSorters;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import javax.naming.AuthenticationException;
+import javax.naming.directory.SearchControls;
+
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
 import org.keycloak.component.ComponentModel;
@@ -72,18 +79,13 @@ import org.keycloak.testsuite.util.LDAPRule;
 import org.keycloak.testsuite.util.LDAPTestUtils;
 import org.keycloak.testsuite.util.oauth.AccessTokenResponse;
 
-import javax.naming.AuthenticationException;
-import jakarta.ws.rs.core.Response;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
-import java.util.stream.Collectors;
-import javax.naming.directory.SearchControls;
 import org.hamcrest.MatcherAssert;
 import org.hamcrest.Matchers;
+import org.junit.Assert;
+import org.junit.ClassRule;
+import org.junit.FixMethodOrder;
+import org.junit.Test;
+import org.junit.runners.MethodSorters;
 
 import static org.junit.Assert.assertEquals;
 
@@ -123,6 +125,11 @@ public class LDAPProvidersIntegrationTest extends AbstractLDAPTest {
             appRealm.getClientByClientId("test-app").setDirectAccessGrantsEnabled(true);
 
         });
+    }
+
+    @Override
+    protected boolean isImportAfterEachMethod() {
+        return true;
     }
 
     /**
@@ -455,6 +462,40 @@ public class LDAPProvidersIntegrationTest extends AbstractLDAPTest {
         UserRepresentation user5 = users.get(0);
         Assert.assertEquals("jbrown5", user5.getUsername());
         Assert.assertEquals("jbrown5@email.org", user5.getEmail());
+    }
+
+    @Test
+    public void testUsernameAndEmailCaseSensitiveIfImportDisabled() {
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            UserStorageProviderModel ldapModel = ctx.getLdapProvider().getModel();
+            ldapModel.setImportEnabled(false);
+            ctx.getRealm().updateComponent(ldapModel);
+            LDAPObject ldapObject = LDAPTestUtils.addLDAPUser(ctx.getLdapProvider(), ctx.getRealm(), "JBrown8", "John", "Brown8", "JBrown8@Email.org", null, "1234");
+            LDAPTestUtils.updateLDAPPassword(ctx.getLdapProvider(), ldapObject, "Password1");
+            UserModel model = session.users().searchForUserStream(ctx.getRealm(), Map.of(UserModel.USERNAME, "JBrown8")).findAny().orElse(null);
+            Assert.assertNotNull(model);
+            assertEquals("JBrown8", model.getUsername());
+            assertEquals("JBrown8@Email.org", model.getEmail());
+            ldapModel.setImportEnabled(true);
+            ctx.getRealm().updateComponent(ldapModel);
+        });
+    }
+
+    @Test
+    public void testUsernameAndEmailCaseInSensitiveIfImportEnabled() {
+        testingClient.server().run(session -> {
+            LDAPTestContext ctx = LDAPTestContext.init(session);
+            UserStorageProviderModel ldapModel = ctx.getLdapProvider().getModel();
+            ldapModel.setImportEnabled(true);
+            ctx.getRealm().updateComponent(ldapModel);
+            LDAPObject ldapObject = LDAPTestUtils.addLDAPUser(ctx.getLdapProvider(), ctx.getRealm(), "JBrown9", "John", "Brown9", "JBrown9@Email.org", null, "1234");
+            LDAPTestUtils.updateLDAPPassword(ctx.getLdapProvider(), ldapObject, "Password1");
+            UserModel model = session.users().searchForUserStream(ctx.getRealm(), Map.of(UserModel.USERNAME, "JBrown9")).findAny().orElse(null);
+            Assert.assertNotNull(model);
+            assertEquals("jbrown9", model.getUsername());
+            assertEquals("jbrown9@email.org", model.getEmail());
+        });
     }
 
     @Test
@@ -1624,6 +1665,7 @@ public class LDAPProvidersIntegrationTest extends AbstractLDAPTest {
             RealmModel testRealm = ctx.getRealm();
 
             UserModel importedUser = UserStoragePrivateUtil.userLocalStorage(session).getUserByUsername(testRealm, "beckybecks");
+            Assert.assertNotNull(importedUser);
 
             // Update user 'beckybecks' in LDAP
             LDAPObject becky = ctx.getLdapProvider().loadLDAPUserByUsername(testRealm, importedUser.getUsername());

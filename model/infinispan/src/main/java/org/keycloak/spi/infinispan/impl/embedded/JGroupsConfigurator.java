@@ -17,27 +17,44 @@
 
 package org.keycloak.spi.infinispan.impl.embedded;
 
-import static org.infinispan.configuration.global.TransportConfiguration.CLUSTER_NAME;
-import static org.infinispan.configuration.global.TransportConfiguration.STACK;
-import static org.keycloak.config.CachingOptions.CACHE_EMBEDDED_PREFIX;
-
 import java.lang.invoke.MethodHandles;
-import java.net.InetAddress;
 import java.security.KeyManagementException;
 import java.security.NoSuchAlgorithmException;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-
+import java.util.function.Consumer;
 import javax.net.ssl.KeyManager;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.TrustManager;
+
+import org.keycloak.Config;
+import org.keycloak.common.util.Retry;
+import org.keycloak.config.CachingOptions;
+import org.keycloak.config.Option;
+import org.keycloak.connections.infinispan.InfinispanConnectionSpi;
+import org.keycloak.connections.jpa.JpaConnectionProvider;
+import org.keycloak.connections.jpa.JpaConnectionProviderFactory;
+import org.keycloak.connections.jpa.util.JpaUtils;
+import org.keycloak.infinispan.util.InfinispanUtils;
+import org.keycloak.jgroups.header.TracerHeader;
+import org.keycloak.jgroups.protocol.KEYCLOAK_JDBC_PING2;
+import org.keycloak.jgroups.protocol.OPEN_TELEMETRY;
+import org.keycloak.models.KeycloakSession;
+import org.keycloak.models.KeycloakSessionFactory;
+import org.keycloak.models.utils.KeycloakModelUtils;
+import org.keycloak.provider.ProviderConfigProperty;
+import org.keycloak.provider.ProviderConfigurationBuilder;
+import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
+import org.keycloak.spi.infinispan.impl.Util;
+import org.keycloak.storage.configuration.ServerConfigStorageProvider;
 
 import org.infinispan.commons.configuration.attributes.Attribute;
 import org.infinispan.configuration.global.TransportConfigurationBuilder;
@@ -58,26 +75,19 @@ import org.jgroups.util.DefaultSocketFactory;
 import org.jgroups.util.ExtendedUUID;
 import org.jgroups.util.SocketFactory;
 import org.jgroups.util.UUID;
-import org.keycloak.Config;
-import org.keycloak.common.util.Retry;
-import org.keycloak.config.CachingOptions;
-import org.keycloak.config.Option;
-import org.keycloak.connections.infinispan.InfinispanConnectionProvider;
-import org.keycloak.connections.infinispan.InfinispanConnectionSpi;
-import org.keycloak.connections.jpa.JpaConnectionProvider;
-import org.keycloak.connections.jpa.JpaConnectionProviderFactory;
-import org.keycloak.connections.jpa.util.JpaUtils;
-import org.keycloak.infinispan.util.InfinispanUtils;
-import org.keycloak.jgroups.protocol.KEYCLOAK_JDBC_PING2;
-import org.keycloak.jgroups.protocol.OPEN_TELEMETRY;
-import org.keycloak.jgroups.header.TracerHeader;
-import org.keycloak.models.KeycloakSession;
-import org.keycloak.models.utils.KeycloakModelUtils;
-import org.keycloak.provider.ProviderConfigProperty;
-import org.keycloak.provider.ProviderConfigurationBuilder;
-import org.keycloak.spi.infinispan.JGroupsCertificateProvider;
-import org.keycloak.spi.infinispan.impl.Util;
-import org.keycloak.storage.configuration.ServerConfigStorageProvider;
+
+import static org.keycloak.config.CachingOptions.CACHE_EMBEDDED_PREFIX;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.JBOSS_NODE_NAME;
+import static org.keycloak.connections.infinispan.InfinispanConnectionProvider.JBOSS_SITE_NAME;
+import static org.keycloak.spi.infinispan.impl.embedded.DefaultCacheEmbeddedConfigProviderFactory.MACHINE_NAME;
+import static org.keycloak.spi.infinispan.impl.embedded.DefaultCacheEmbeddedConfigProviderFactory.NODE_NAME;
+import static org.keycloak.spi.infinispan.impl.embedded.DefaultCacheEmbeddedConfigProviderFactory.PROVIDER_ID;
+import static org.keycloak.spi.infinispan.impl.embedded.DefaultCacheEmbeddedConfigProviderFactory.RACK_NAME;
+import static org.keycloak.spi.infinispan.impl.embedded.DefaultCacheEmbeddedConfigProviderFactory.SITE_NAME;
+import static org.keycloak.spi.infinispan.impl.embedded.DefaultCacheEmbeddedConfigProviderFactory.TRACING;
+
+import static org.infinispan.configuration.global.TransportConfiguration.CLUSTER_NAME;
+import static org.infinispan.configuration.global.TransportConfiguration.STACK;
 
 /**
  * Utility class to configure JGroups based on the Keycloak configuration.
@@ -101,6 +111,26 @@ public final class JGroupsConfigurator {
     }
 
     /**
+     * Checks if Infinispan is configured with or without a clustering.
+     *
+     * @param holder The {@link ConfigurationBuilderHolder} with the Infinispan configuration.
+     * @return {@code true} if Infinispan is configured without clustering.
+     */
+    public static boolean isLocal(ConfigurationBuilderHolder holder) {
+        return transportOf(holder).getTransport() == null;
+    }
+
+    /**
+     * Checks if Infinispan is configured with or without a clustering.
+     *
+     * @param holder The {@link ConfigurationBuilderHolder} with the Infinispan configuration.
+     * @return {@code true} if Infinispan is configured with clustering enabled.
+     */
+    public static boolean isClustered(ConfigurationBuilderHolder holder) {
+        return transportOf(holder).getTransport() != null;
+    }
+
+    /**
      * Configures JGroups based on the Keycloak configuration.
      *
      * @param config  The Keycloak configuration.
@@ -108,12 +138,15 @@ public final class JGroupsConfigurator {
      * @param session The {@link KeycloakSession} sessions for Database access.
      */
     public static void configureJGroups(Config.Scope config, ConfigurationBuilderHolder holder, KeycloakSession session) {
+        if (isLocal(holder)) {
+            return;
+        }
         var stack = config.get(DefaultCacheEmbeddedConfigProviderFactory.STACK);
         if (stack != null) {
             transportOf(holder).stack(stack);
         }
         configureTransport(config);
-        boolean tracingEnabled = config.getBoolean(DefaultCacheEmbeddedConfigProviderFactory.TRACING, false);
+        boolean tracingEnabled = config.getBoolean(TRACING, false);
         configureDiscovery(holder, session, tracingEnabled);
         configureTls(holder, session);
         warnDeprecatedStack(holder);
@@ -126,30 +159,29 @@ public final class JGroupsConfigurator {
      * @param holder The {@link ConfigurationBuilderHolder} where the transport is configured.
      */
     public static void configureTopology(Config.Scope config, ConfigurationBuilderHolder holder) {
-        if (System.getProperty(InfinispanConnectionProvider.JBOSS_SITE_NAME) != null) {
+        if (System.getProperty(JBOSS_SITE_NAME) != null) {
             throw new IllegalArgumentException(
                     String.format("System property %s is in use. Use --spi-cache-embedded-%s-site-name config option instead",
-                            InfinispanConnectionProvider.JBOSS_SITE_NAME, DefaultCacheEmbeddedConfigProviderFactory.PROVIDER_ID));
+                            JBOSS_SITE_NAME, PROVIDER_ID));
         }
-        if (System.getProperty(InfinispanConnectionProvider.JBOSS_NODE_NAME) != null) {
+        if (System.getProperty(JBOSS_NODE_NAME) != null) {
             throw new IllegalArgumentException(
                     String.format("System property %s is in use. Use --spi-cache-embedded-%s-node-name config option instead",
-                            InfinispanConnectionProvider.JBOSS_NODE_NAME, DefaultCacheEmbeddedConfigProviderFactory.PROVIDER_ID));
+                            JBOSS_NODE_NAME, PROVIDER_ID));
         }
         var transport = transportOf(holder);
-        var nodeName = config.get(DefaultCacheEmbeddedConfigProviderFactory.NODE_NAME);
-        if (nodeName != null) {
-            transport.nodeName(nodeName);
-        }
         //legacy option, for backwards compatibility --spi-connections-infinispan-quarkus-site-name
         var legacySiteName = Config.scope(InfinispanConnectionSpi.SPI_NAME, "quarkus").get("site-name");
         if (legacySiteName != null) {
-            logger.warn("--spi-connections-infinispan-quarkus-site-name is deprecated and may be removed in the future. Use --spi-cache-embedded-%s-site-name".formatted(DefaultCacheEmbeddedConfigProviderFactory.PROVIDER_ID));
+            logger.warn("--spi-connections-infinispan-quarkus-site-name is deprecated and may be removed in the future. Use --spi-cache-embedded-%s-site-name".formatted(PROVIDER_ID));
         }
-        var siteName = config.get(DefaultCacheEmbeddedConfigProviderFactory.SITE_NAME, legacySiteName);
-        if (siteName != null) {
+        var siteName = config.get(SITE_NAME, legacySiteName);
+        if (siteName != null && !siteName.isEmpty()) {
             transport.siteId(siteName);
         }
+        readConfigAndSet(config, RACK_NAME, transport::rackId);
+        readConfigAndSet(config, MACHINE_NAME, transport::machineId);
+        readConfigAndSet(config, NODE_NAME, transport::nodeName);
     }
 
     static void createJGroupsProperties(ProviderConfigurationBuilder builder) {
@@ -232,22 +264,50 @@ public final class JGroupsConfigurator {
      * one second. This prevents a split-brain scenario on a concurrent startup.
      */
     private static Address prepareJGroupsAddress(KeycloakSession session, String clusterName) {
-        var storage = session.getProvider(ServerConfigStorageProvider.class);
-        String seq = storage.loadOrCreate(JGROUPS_ADDRESS_SEQUENCE, () -> "0");
-        long value = Long.parseLong(seq) + 1;
-        String newSeq = Long.toString(value);
-        storage.replace(JGROUPS_ADDRESS_SEQUENCE, seq, newSeq);
-
         var cp = session.getProvider(JpaConnectionProvider.class);
         var tableName = JpaUtils.getTableNameForNativeQuery("JGROUPS_PING", cp.getEntityManager());
-        String statement = String.format("INSERT INTO %s values (?, ?, ?, ?, ?)", tableName);
 
-        ExtendedUUID address = new ExtendedUUID(0, value);
+        long highestSequence = findHighestSequenceInTable(cp, clusterName, tableName);
+        long mySequence = getNextSequence(session.getKeycloakSessionFactory(), highestSequence);
+        return insertSequenceInTable(cp, clusterName, tableName, mySequence);
+    }
 
+    private static long findHighestSequenceInTable(JpaConnectionProvider cp, String clusterName, String tableName) {
+        return cp.getEntityManager().<Connection, Long>callWithConnection(con -> {
+            long maxSequence = -1;
+            try (PreparedStatement s = con.prepareStatement("SELECT address FROM %s WHERE cluster_name=?".formatted(tableName))) {
+                s.setString(1, clusterName);
+                try (ResultSet resultSet = s.executeQuery()) {
+                    while (resultSet.next()) {
+                        String uuid = resultSet.getString(1);
+                        Address addr = org.jgroups.util.Util.addressFromString(uuid);
+                        if (addr instanceof UUID uuidAddr && uuidAddr.getMostSignificantBits() == 0 && uuidAddr.getLeastSignificantBits() > maxSequence) {
+                            maxSequence = uuidAddr.getLeastSignificantBits();
+                        }
+                    }
+                }
+            }
+            return maxSequence;
+        });
+    }
 
-        cp.getEntityManager().runWithConnection(o -> {
-            Connection con = (Connection) o;
-            try (PreparedStatement s = con.prepareStatement(statement)) {
+    private static long getNextSequence(KeycloakSessionFactory sf, long highestSequence) {
+        // Run this in a separate transaction so that we already write the new ID to the database.
+        // This helps us in case there is an inconsistency if some old restored database and some inconsistent nodes writing
+        // their node IDs to the table. Given this is being called in a retry loop, we'll be making some progress.
+        return KeycloakModelUtils.runJobInTransactionWithResult(sf, session -> {
+            var storage = session.getProvider(ServerConfigStorageProvider.class);
+            String seq = storage.loadOrCreate(JGROUPS_ADDRESS_SEQUENCE, () -> "0");
+            long value = Math.max(highestSequence + 1, Long.parseLong(seq) + 1);
+            storage.replace(JGROUPS_ADDRESS_SEQUENCE, seq, Long.toString(value));
+            return value;
+        });
+    }
+
+    private static Address insertSequenceInTable(JpaConnectionProvider cp, String clusterName, String tableName, long mySequence) {
+        ExtendedUUID address = new ExtendedUUID(0, mySequence);
+        cp.getEntityManager().<Connection>runWithConnection(con -> {
+            try (PreparedStatement s = con.prepareStatement("INSERT INTO %s values (?, ?, ?, ?, ?)".formatted(tableName))) {
                 s.setString(1, org.jgroups.util.Util.addressToString(new UUID(address.getMostSignificantBits(), address.getLeastSignificantBits()))); // address
                 s.setString(2, "(starting)"); // name
                 s.setString(3, clusterName); // cluster name
@@ -256,7 +316,6 @@ public final class JGroupsConfigurator {
                 s.execute();
             }
         });
-
         return address;
     }
 
@@ -337,6 +396,13 @@ public final class JGroupsConfigurator {
 
     private static boolean isJdbcPingStack(String stackName) {
         return "jdbc-ping".equals(stackName) || "jdbc-ping-udp".equals(stackName);
+    }
+
+    private static void readConfigAndSet(Config.Scope scope, String configKey, Consumer<String> consumer) {
+        String value = scope.get(configKey);
+        if (value != null && !value.isEmpty()) {
+            consumer.accept(value);
+        }
     }
 
     private static class JpaFactoryAwareJGroupsChannelConfigurator extends EmbeddedJGroupsChannelConfigurator {

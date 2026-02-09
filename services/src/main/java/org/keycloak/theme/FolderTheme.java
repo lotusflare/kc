@@ -17,9 +17,6 @@
 
 package org.keycloak.theme;
 
-import org.keycloak.models.RealmModel;
-import org.keycloak.services.util.LocaleUtil;
-
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,6 +27,9 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
 import java.util.regex.Pattern;
+
+import org.keycloak.models.RealmModel;
+import org.keycloak.services.util.LocaleUtil;
 
 /**
  * @author <a href="mailto:sthorger@redhat.com">Stian Thorgersen</a>
@@ -86,6 +86,12 @@ public class FolderTheme extends FileBasedTheme {
     public URL getTemplate(String name) throws IOException {
         File file = new File(themeDir, name);
         return file.isFile() ? file.toURI().toURL() : null;
+    }
+
+    @Override
+    public boolean hasResource(String path) throws IOException {
+        var file = ResourceLoader.getFile(resourcesDir, path);
+        return file != null && file.isFile();
     }
 
     @Override

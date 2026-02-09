@@ -101,17 +101,6 @@ spec:
       - step-up-authentication
   transaction:
     xaEnabled: false
-  tracing:
-    enabled: true
-    endpoint: http://my-tracing:4317
-    serviceName: my-best-keycloak
-    protocol: http/protobuf
-    samplerType: parentbased_traceidratio
-    samplerRatio: 0.01
-    compression: gzip
-    resourceAttributes:
-      service.namespace: keycloak-namespace
-      service.name: custom-service-name
   resources:
     requests:
       cpu: "500m"
@@ -135,6 +124,9 @@ spec:
   update:
     strategy: Auto
     revision: 1
+    scheduling: {}
+  scheduling:
+    priorityClassName: x
   env:
     - name : MY_ENV_VAR
       value: my-value
@@ -143,3 +135,7 @@ spec:
       metadata:
         labels:
           my-label: "foo"
+  serviceMonitor:
+    enabled: true
+    interval: 30s
+    scrapeTimeout: 10s

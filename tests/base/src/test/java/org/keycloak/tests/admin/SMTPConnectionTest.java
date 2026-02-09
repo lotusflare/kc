@@ -17,23 +17,25 @@
 
 package org.keycloak.tests.admin;
 
-import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.MethodOrderer;
-import org.junit.jupiter.api.Order;
-import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.TestMethodOrder;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+import jakarta.mail.Address;
+import jakarta.mail.internet.MimeMessage;
+import jakarta.ws.rs.core.Response;
+
 import org.keycloak.admin.client.Keycloak;
 import org.keycloak.admin.client.resource.RealmResource;
 import org.keycloak.admin.client.resource.UserResource;
+import org.keycloak.email.EmailSenderProvider;
 import org.keycloak.models.AdminRoles;
 import org.keycloak.models.Constants;
 import org.keycloak.representations.AccessToken;
 import org.keycloak.representations.idm.RealmRepresentation;
 import org.keycloak.representations.idm.UserRepresentation;
-
-import jakarta.mail.Address;
-import jakarta.mail.internet.MimeMessage;
-import jakarta.ws.rs.core.Response;
 import org.keycloak.testframework.annotations.InjectAdminClient;
 import org.keycloak.testframework.annotations.InjectKeycloakUrls;
 import org.keycloak.testframework.annotations.InjectRealm;
@@ -47,16 +49,17 @@ import org.keycloak.testframework.realm.RealmConfig;
 import org.keycloak.testframework.realm.RealmConfigBuilder;
 import org.keycloak.testframework.server.KeycloakUrls;
 
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import org.junit.jupiter.api.Assertions;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertArrayEquals;
-import static org.junit.jupiter.api.Assertions.fail;
 import static org.keycloak.representations.idm.ComponentRepresentation.SECRET_VALUE;
+
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * @author <a href="mailto:bruno@abstractj.org">Bruno Oliveira</a>
@@ -246,6 +249,11 @@ public class SMTPConnectionTest {
         assertMailReceived();
 
         // utf8 on address
+        RealmResource realmRes = adminClient.realms().realm(managedRealm.getName());
+        RealmRepresentation realmRep = realmRes.toRepresentation();
+        realmRep.getSmtpServer().put(EmailSenderProvider.CONFIG_ALLOW_UTF8, Boolean.TRUE.toString());
+        realmRes.update(realmRep);
+
         AccessToken token = oAuthClient.parseToken(adminClient.tokenManager().getAccessToken().getToken(), AccessToken.class);
         UserResource userRes = adminClient.realm("default").users().get(token.getSubject());
         UserRepresentation userRep = userRes.toRepresentation();
@@ -267,6 +275,8 @@ public class SMTPConnectionTest {
         } finally {
             userRep.setEmail(previousEmail);
             userRes.update(userRep);
+            realmRep.getSmtpServer().remove(EmailSenderProvider.CONFIG_ALLOW_UTF8);
+            realmRes.update(realmRep);
         }
     }
 
@@ -315,7 +325,7 @@ public class SMTPConnectionTest {
         config.put("replyTo", replyTo);
         config.put("envelopeFrom", envelopeFrom);
         if (allowutf8 != null) {
-            config.put("allowutf8", allowutf8);
+            config.put(EmailSenderProvider.CONFIG_ALLOW_UTF8, allowutf8);
         }
         return config;
     }

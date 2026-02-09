@@ -1,5 +1,32 @@
 package org.keycloak.quarkus.runtime.configuration.mappers;
 
+import java.io.File;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.Set;
+import java.util.function.BiFunction;
+import java.util.logging.Level;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
+
+import org.keycloak.common.Profile;
+import org.keycloak.config.LoggingOptions;
+import org.keycloak.config.Option;
+import org.keycloak.quarkus.runtime.Messages;
+import org.keycloak.quarkus.runtime.cli.Picocli;
+import org.keycloak.quarkus.runtime.cli.PropertyException;
+import org.keycloak.quarkus.runtime.configuration.Configuration;
+
+import io.quarkus.runtime.configuration.MemorySizeConverter;
+import io.smallrye.config.ConfigSourceInterceptorContext;
+import org.jboss.logmanager.LogContext;
+
 import static org.keycloak.config.LoggingOptions.DEFAULT_LOG_FORMAT;
 import static org.keycloak.config.LoggingOptions.LOG_CONSOLE_ENABLED;
 import static org.keycloak.config.LoggingOptions.LOG_FILE_ENABLED;
@@ -8,31 +35,7 @@ import static org.keycloak.quarkus.runtime.configuration.Configuration.isSet;
 import static org.keycloak.quarkus.runtime.configuration.Configuration.isTrue;
 import static org.keycloak.quarkus.runtime.configuration.mappers.PropertyMapper.fromOption;
 
-import java.io.File;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
-import java.util.Locale;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Set;
-import java.util.function.BiFunction;
-import java.util.logging.Level;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
-
-import io.quarkus.runtime.configuration.MemorySizeConverter;
-import org.jboss.logmanager.LogContext;
-import org.keycloak.common.Profile;
-import org.keycloak.config.LoggingOptions;
-import org.keycloak.config.Option;
-import org.keycloak.quarkus.runtime.Messages;
-import org.keycloak.quarkus.runtime.cli.PropertyException;
-import org.keycloak.quarkus.runtime.configuration.Configuration;
-
-import io.smallrye.config.ConfigSourceInterceptorContext;
-
-public final class LoggingPropertyMappers {
+public final class LoggingPropertyMappers implements PropertyMapperGrouping {
 
     private static final String CONSOLE_ENABLED_MSG = "Console log handler is activated";
     private static final String FILE_ENABLED_MSG = "File log handler is activated";
@@ -41,12 +44,11 @@ public final class LoggingPropertyMappers {
 
     private final static Map<String, Map<String, String>> rootLogLevels = new HashMap<String, Map<String,String>>();
 
-    private LoggingPropertyMappers() {
-    }
 
-    public static PropertyMapper<?>[] getMappers() {
+    @Override
+    public List<PropertyMapper<?>> getPropertyMappers() {
         rootLogLevels.clear(); // reset the cached root log level and categories
-        PropertyMapper<?>[] defaultMappers = new PropertyMapper[]{
+        return List.of(
                 fromOption(LoggingOptions.LOG)
                         .paramLabel("<handler>")
                         .build(),
@@ -87,6 +89,7 @@ public final class LoggingPropertyMappers {
                 fromOption(LoggingOptions.LOG_CONSOLE_COLOR)
                         .isEnabled(LoggingPropertyMappers::isConsoleEnabled, CONSOLE_ENABLED_MSG)
                         .to("quarkus.console.color")
+                        .transformer(this::transformConsoleColor)
                         .build(),
                 fromOption(LoggingOptions.LOG_CONSOLE_ENABLED)
                         .mapFrom(LoggingOptions.LOG, LoggingPropertyMappers.resolveLogHandler(LoggingOptions.DEFAULT_LOG_HANDLER.name()))
@@ -258,11 +261,13 @@ public final class LoggingPropertyMappers {
                         .isEnabled(LoggingPropertyMappers::isMdcActive, "MDC logging is enabled")
                         .to("kc.spi-mapped-diagnostic-context--default--mdc-keys")
                         .paramLabel("keys")
-                        .build(),
+                        .build()
 
-        };
+        );
+    }
 
-        return defaultMappers;
+    private String transformConsoleColor(String value, ConfigSourceInterceptorContext context) {
+        return Optional.ofNullable(value).orElseGet(() -> Boolean.toString(Picocli.hasColorSupport()));
     }
 
     public static boolean isConsoleEnabled() {
@@ -426,7 +431,7 @@ public final class LoggingPropertyMappers {
         return LoggingOptions.DEFAULT_LOG_FORMAT;
     }
 
-    private static String upperCase(String value, ConfigSourceInterceptorContext context) {
+    static String upperCase(String value, ConfigSourceInterceptorContext context) {
         return value.toUpperCase(Locale.ROOT);
     }
 

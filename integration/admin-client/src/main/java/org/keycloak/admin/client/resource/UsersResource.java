@@ -17,7 +17,7 @@
 
 package org.keycloak.admin.client.resource;
 
-import org.keycloak.representations.idm.UserRepresentation;
+import java.util.List;
 
 import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
@@ -29,7 +29,8 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
-import java.util.List;
+
+import org.keycloak.representations.idm.UserRepresentation;
 
 public interface UsersResource {
 
@@ -382,6 +383,8 @@ public interface UsersResource {
      * @param emailVerified emailVerified field of a user
      * @param username      username field of a user
      * @param enabled       Boolean representing if user is enabled or not
+     * @param idpAlias The alias of an Identity Provider linked to the user. Parameter supported since Keycloak server 26.4.0
+     * @param idpUserId The userId at an Identity Provider linked to the user. Parameter supported since Keycloak server 26.4.0
      * @return number of users matching the given filters
      */
     @Path("count")
@@ -396,6 +399,38 @@ public interface UsersResource {
                   @QueryParam("enabled") Boolean enabled,
                   @QueryParam("idpAlias") String idpAlias,
                   @QueryParam("idpUserId") String idpUserId,
+                  @QueryParam("q") String searchQuery);
+
+    /**
+     * Returns the number of users that can be viewed and match the given filters.
+     * Includes support for exact matching.
+     *
+     * @param search        arbitrary search string for all the fields below
+     * @param last          last name field of a user
+     * @param first         first name field of a user
+     * @param email         email field of a user
+     * @param emailVerified emailVerified field of a user
+     * @param username      username field of a user
+     * @param enabled       Boolean representing if user is enabled or not
+     * @param idpAlias      The alias of an Identity Provider linked to the user
+     * @param idpUserId     The userId at an Identity Provider linked to the user
+     * @param exact         Boolean which defines whether the params must match exactly
+     * @param searchQuery   A query to search for custom attributes
+     * @return number of users matching the given filters
+     */
+    @Path("count")
+    @GET
+    @Produces(MediaType.APPLICATION_JSON)
+    Integer count(@QueryParam("search") String search,
+                  @QueryParam("lastName") String last,
+                  @QueryParam("firstName") String first,
+                  @QueryParam("email") String email,
+                  @QueryParam("emailVerified") Boolean emailVerified,
+                  @QueryParam("username") String username,
+                  @QueryParam("enabled") Boolean enabled,
+                  @QueryParam("idpAlias") String idpAlias,
+                  @QueryParam("idpUserId") String idpUserId,
+                  @QueryParam("exact") Boolean exact,
                   @QueryParam("q") String searchQuery);
 
     /**
