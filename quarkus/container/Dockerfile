@@ -19,7 +19,7 @@ RUN chmod -R g+rwX /opt/keycloak
 ADD ubi-null.sh /tmp/
 RUN bash /tmp/ubi-null.sh java-21-openjdk-headless glibc-langpack-en findutils
 
-FROM registry.access.redhat.com/ubi9-micro
+FROM registry.access.redhat.com/ubi9
 ENV LANG=en_US.UTF-8
 
 # Flag for determining app is running in container
