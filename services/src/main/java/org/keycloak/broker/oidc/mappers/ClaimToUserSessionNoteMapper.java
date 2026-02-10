@@ -9,6 +9,7 @@ import java.util.Set;
 
 import org.keycloak.broker.oidc.KeycloakOIDCIdentityProviderFactory;
 import org.keycloak.broker.oidc.OIDCIdentityProviderFactory;
+import org.keycloak.broker.oidc.CustomOIDCIdentityProviderFactory;
 import org.keycloak.broker.provider.BrokeredIdentityContext;
 import org.keycloak.models.IdentityProviderMapperModel;
 import org.keycloak.models.IdentityProviderSyncMode;
@@ -28,7 +29,7 @@ public class ClaimToUserSessionNoteMapper extends AbstractClaimMapper {
     private static final String CLAIMS_PROPERTY_NAME = "claims";
     private static final String ARE_CLAIM_VALUES_REGEX_PROPERTY_NAME = "are.claim.values.regex";
     private static final String[] COMPATIBLE_PROVIDERS = {KeycloakOIDCIdentityProviderFactory.PROVIDER_ID,
-            OIDCIdentityProviderFactory.PROVIDER_ID};
+            OIDCIdentityProviderFactory.PROVIDER_ID, CustomOIDCIdentityProviderFactory.PROVIDER_ID};
 
     private static final List<ProviderConfigProperty> CONFIG_PROPERTIES = new ArrayList<>();
 
