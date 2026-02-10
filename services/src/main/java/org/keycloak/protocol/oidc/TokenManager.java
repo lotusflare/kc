@@ -318,7 +318,6 @@ public class TokenManager {
         return null;
     }
 
-
     // Will throw OAuthErrorException if validation fails
     public void validateTokenReuse(KeycloakSession session, RealmModel realm, AccessToken refreshToken, AuthenticatedClientSessionModel clientSession, boolean refreshFlag) throws OAuthErrorException {
         String key = getReuseIdKey(refreshToken);
@@ -1766,4 +1765,5 @@ public class TokenManager {
             session.getContext().setOrganization(organization);
         }
     }
+
 }
