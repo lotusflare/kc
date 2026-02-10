@@ -10,6 +10,7 @@ import { IdentityProviderAddMapperRoute } from "./routes/AddMapper";
 import { IdentityProviderEditMapperRoute } from "./routes/EditMapper";
 import { IdentityProviderCreateRoute } from "./routes/IdentityProviderCreate";
 import { IdentityProviderOAuth2Route } from "./routes/IdentityProviderOAuth2";
+import { IdentityProviderCustomOidcRoute } from "./routes/IdentityProviderCustomOidc";
 
 const routes: AppRouteObject[] = [
   IdentityProviderAddMapperRoute,
@@ -23,6 +24,7 @@ const routes: AppRouteObject[] = [
   IdentityProviderCreateRoute,
   IdentityProviderRoute,
   IdentityProviderOAuth2Route,
+  IdentityProviderCustomOidcRoute,
 ];
 
 export default routes;
