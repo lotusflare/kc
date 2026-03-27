@@ -66,6 +66,14 @@ public class CustomOIDCIdentityProvider extends OIDCIdentityProvider {
         String email = getJsonProperty(userInfo, "email");
         AbstractJsonUserAttributeMapper.storeUserProfileForMapper(identity, userInfo, getConfig().getAlias());
 
+        if (getConfig().isStoreToken()) {
+            identity.setToken(JsonSerialization.writeValueAsString(tokenResponse));
+        }
+
+        if (tokenResponse != null) {
+            identity.getContextData().put(FEDERATED_ACCESS_TOKEN_RESPONSE, tokenResponse);
+        }
+
         identity.getContextData().put(VALIDATED_ID_TOKEN, idToken);
         identity.setId(id);
 
@@ -124,6 +132,14 @@ public class CustomOIDCIdentityProvider extends OIDCIdentityProvider {
         String claimsJson = getClaimsJson();
         uriBuilder.queryParam("claims", URLEncoder.encode(claimsJson));
         return uriBuilder;
+    }
+
+    @Override
+    public void authenticationFinished(AuthenticationSessionModel authSession, BrokeredIdentityContext context) {
+        super.authenticationFinished(authSession, context);
+        String storedIdToken = authSession.getUserSessionNote(FEDERATED_ID_TOKEN);
+        logger.info("--------------------------------Check FEDERATED_ID_TOKEN in Session: " + (storedIdToken != null ? "FOUND" : "NOT FOUND"));
+        logger.info("--------------------------------FEDERATED_ID_TOKEN: " + storedIdToken);
     }
 
     private String getClaimsJson() {

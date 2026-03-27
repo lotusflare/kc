@@ -143,6 +143,7 @@ public class OIDCIdentityProvider extends AbstractOAuth2IdentityProvider<OIDCIde
         if (getConfig().getLogoutUrl() == null || getConfig().getLogoutUrl().trim().equals("") || !getConfig().isBackchannelSupported())
             return;
         String idToken = userSession.getNote(FEDERATED_ID_TOKEN);
+        logger.info("--------------------------------Backchannel logout idToken: " + idToken);
         if (idToken == null) return;
         backchannelLogout(userSession, idToken);
     }
@@ -158,6 +159,7 @@ public class OIDCIdentityProvider extends AbstractOAuth2IdentityProvider<OIDCIde
             logoutUri.queryParam("client_id", getConfig().getClientId());
         }
         String url = logoutUri.build().toString();
+        logger.info("--------------------------------Backchannel logout url: " + url);
         try {
             int status = SimpleHttp.create(session).doGet(url).asStatus();
             boolean success = status >= 200 && status < 400;
@@ -175,6 +177,7 @@ public class OIDCIdentityProvider extends AbstractOAuth2IdentityProvider<OIDCIde
         if (getConfig().getLogoutUrl() == null || getConfig().getLogoutUrl().trim().equals("")) return null;
         String idToken = userSession.getNote(FEDERATED_ID_TOKEN);
         if (getConfig().isBackchannelSupported()) {
+            logger.info("--------------------------------Backchannel logout");
             backchannelLogout(userSession, idToken);
             return null;
         } else {
