@@ -41,10 +41,11 @@ public class BackchannelAuthenticationEndpointRequestParserProcessor {
 
     public static BackchannelAuthenticationEndpointRequest parseRequest(EventBuilder event, KeycloakSession session, ClientModel client, MultivaluedMap<String, String> requestParams, CibaConfig config) {
         try {
+            boolean camara = Boolean.parseBoolean(client.getAttribute(CibaConfig.CAMARA_CIBA_ENABLED));
             BackchannelAuthenticationEndpointRequest request = new BackchannelAuthenticationEndpointRequest();
 
             BackchannelAuthenticationEndpointRequestBodyParser parser = new BackchannelAuthenticationEndpointRequestBodyParser(requestParams);
-            parser.parseRequest(request);
+            parser.parseRequest(request, camara);
 
             if (parser.getInvalidRequestMessage() != null) {
                 request.invalidRequestMessage = parser.getInvalidRequestMessage();
@@ -59,7 +60,7 @@ public class BackchannelAuthenticationEndpointRequestParserProcessor {
             }
 
             if (requestParam != null) {
-                new BackchannelAuthenticationEndpointSignedRequestParser(session, requestParam, client, config).parseRequest(request);
+                new BackchannelAuthenticationEndpointSignedRequestParser(session, requestParam, client, config).parseRequest(request, camara);
             } else if (requestUriParam != null) {
                 // Validate "requestUriParam" with allowed requestUris
                 List<String> requestUris = OIDCAdvancedConfigWrapper.fromClientModel(client).getRequestUris();
@@ -69,7 +70,7 @@ public class BackchannelAuthenticationEndpointRequestParserProcessor {
                 }
 
                 String retrievedRequest = session.getProvider(HttpClientProvider.class).getString(requestUri);
-                new BackchannelAuthenticationEndpointSignedRequestParser(session, retrievedRequest, client, config).parseRequest(request);
+                new BackchannelAuthenticationEndpointSignedRequestParser(session, retrievedRequest, client, config).parseRequest(request, camara);
             }
 
             return request;
