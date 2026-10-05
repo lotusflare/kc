@@ -48,6 +48,7 @@ public class CibaConfig extends AbstractConfig {
     private String authRequestedUserHint;
 
     // client attribute names
+    public static final String CAMARA_CIBA_ENABLED = "camara.ciba.enabled";
     public static final String OIDC_CIBA_GRANT_ENABLED = "oidc.ciba.grant.enabled";
     public static final String CIBA_BACKCHANNEL_TOKEN_DELIVERY_MODE_PER_CLIENT = "ciba.backchannel.token.delivery.mode";
     public static final String CIBA_BACKCHANNEL_CLIENT_NOTIFICATION_ENDPOINT = "ciba.backchannel.client.notification.endpoint";

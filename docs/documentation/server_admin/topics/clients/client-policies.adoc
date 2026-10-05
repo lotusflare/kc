@@ -202,3 +202,82 @@ Keycloak, with client policies, provides specific executors to protect the vario
 * *Secure Client URIs*: A generic executor that enforces all client URIs to only accept HTTPS and to not accept any wildcards.
 * *Secure Redirect URIs Enforcer*: An executor that allows different levels of validations for redirect URIs, such as IPv4 and IPv6 loopback addresses, HTTP scheme, wildcards, only permitted domains, or ensuring OAuth 2.1 compliance.
 * *Secure Client URIs Pattern Executor*: This executor is the most generic and flexible for validating client URLs. It allows you to select from a list only the URIs you want to validate, and then validates them providing a list of permitted pattern using regular expressions. Explore this <<ssrf,dedicated section>> to see how this executor can be used to prevent an SSRF attack.
+
+
+== CAMARA CIBA requests (LF extension)
+
+CAMARA field handling is opt-in for each client. Set the client attribute
+`camara.ciba.enabled` to `true` through the Admin REST API or a realm import.
+Leave the attribute absent or set it to `false` to retain standard CIBA field handling.
+This attribute does not enable the CIBA grant itself; the usual CIBA client settings still apply.
+
+For an enabled client, the standard CIBA parser ignores `binding_message`, `user_code`,
+`requested_expiry`, and `acr_values` in both form parameters and signed request objects.
+It skips these fields before conversion, so even a non-numeric `requested_expiry` is ignored.
+The existing endpoint then uses the realm CIBA lifetime and continues through the standard
+user, scope, notification, authentication channel, request storage, callback, and token flows.
+
+Keycloak still verifies signed request objects with the registered client algorithm and key.
+It also keeps the original verified claims and request parameters available to client policies.
+The parser does not rewrite the JWT or authenticate the client a second time.
+
+=== Audience policy
+
+The client attribute controls field handling only. To enable CAMARA signed-request audience
+validation, also add the `camara-ciba-audience` executor to a client profile and enable a policy
+that applies that profile. The executor checks only clients with `camara.ciba.enabled=true`, so
+the policy can use the `any-client` condition without changing other clients.
+
+The executor accepts the realm issuer and the internal CIBA authentication endpoint as audiences.
+Use its `additional-audiences` configuration for exact public endpoint URLs, for example:
+
+[source,json]
+----
+{
+  "profiles": [
+    {
+      "name": "camara-ciba",
+      "description": "Check CAMARA CIBA signed-request audiences",
+      "executors": [
+        {
+          "executor": "camara-ciba-audience",
+          "configuration": {
+            "additional-audiences": ["https://api.example/bc-authorize"]
+          }
+        }
+      ]
+    }
+  ]
+}
+----
+
+An example client policy is:
+
+[source,json]
+----
+{
+  "policies": [
+    {
+      "name": "camara-ciba",
+      "enabled": true,
+      "conditions": [{"condition": "any-client", "configuration": {}}],
+      "profiles": ["camara-ciba"]
+    }
+  ]
+}
+----
+
+Merge these entries into the realm's existing profiles and policies. Do not replace unrelated entries.
+The executor uses exact audience matches. It does not trust forwarded headers or accept wildcard URLs.
+Both `request` and registered `request_uri` requests are checked after signature verification and before
+sending to the authentication channel. Missing, malformed, or unmatched audiences produce `invalid_request`.
+Ordinary form requests remain supported.
+
+This executor only adds audience validation. It does not replace other required signed-request checks,
+such as expiry or issuer checks supplied by a separately configured security profile. Review overlapping
+profiles: `secure-ciba-session` requires the binding message that CAMARA ignores, and
+`secure-ciba-signed-authn-req` requires signed requests and the realm issuer audience even when this
+executor accepts a public endpoint audience.
+
+Use this implementation with the standard CIBA endpoint. Remove any provider that replaces the `ciba`
+endpoint with a separate CAMARA authorization flow before enabling these settings.
