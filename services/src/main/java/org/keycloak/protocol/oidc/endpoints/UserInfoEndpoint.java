@@ -28,7 +28,6 @@ import org.keycloak.crypto.CekManagementProvider;
 import org.keycloak.crypto.KeyWrapper;
 import org.keycloak.crypto.SignatureProvider;
 import org.keycloak.crypto.SignatureSignerContext;
-import org.keycloak.crypto.SignatureVerifierContext;
 import org.keycloak.events.Details;
 import org.keycloak.events.Errors;
 import org.keycloak.events.EventBuilder;
@@ -183,13 +182,10 @@ public class UserInfoEndpoint {
         AccessToken token;
         ClientModel clientModel = null;
         try {
-            TokenVerifier<AccessToken> verifier = TokenVerifier.create(tokenForUserInfo.getToken(), AccessToken.class).withDefaultChecks()
+            TokenVerifier<AccessToken> verifier = TokenVerifier.createWithoutSignature(session.tokens().decode(tokenForUserInfo.getToken(), AccessToken.class)).withDefaultChecks()
                     .realmUrl(Urls.realmIssuer(session.getContext().getUri().getBaseUri(), realm.getName()));
 
             verifier = DPoPUtil.withDPoPVerifier(verifier, realm, new DPoPUtil.Validator(session).request(request).uriInfo(session.getContext().getUri()).accessToken(tokenForUserInfo.getToken()));
-
-            SignatureVerifierContext verifierContext = session.getProvider(SignatureProvider.class, verifier.getHeader().getAlgorithm().name()).verifier(verifier.getHeader().getKeyId());
-            verifier.verifierContext(verifierContext);
 
             token = verifier.verify().getToken();
 

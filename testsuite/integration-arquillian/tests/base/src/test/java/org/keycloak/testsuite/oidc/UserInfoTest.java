@@ -795,6 +795,54 @@ public class UserInfoTest extends AbstractKeycloakTest {
     }
 
     @Test
+    public void testUnsuccessfulUserInfoRequestWithInvalidAlgorithmGet() throws Exception {
+        testInvalidAlgorithm(false, false);
+    }
+
+    @Test
+    public void testUnsuccessfulUserInfoRequestWithInvalidAlgorithmPostHeader() throws Exception {
+        testInvalidAlgorithm(true, false);
+    }
+
+    @Test
+    public void testUnsuccessfulUserInfoRequestWithInvalidAlgorithmPostBody() throws Exception {
+        testInvalidAlgorithm(true, true);
+    }
+
+    private void testInvalidAlgorithm(boolean post, boolean body) throws Exception {
+        try (Client client = AdminClientUtil.createResteasyClient()) {
+            String[] tokenParts = executeGrantAccessTokenRequest(client).getToken().split("\\.");
+            events.clear();
+
+            for (String header : List.of("{\"alg\":\"none\"}", "{}", "{\"alg\":null}", "{\"alg\":\"unsupported\"}")) {
+                String token = Base64Url.encode(header.getBytes(StandardCharsets.UTF_8)) + "." + tokenParts[1] + "." + tokenParts[2];
+                WebTarget target = UserInfoClientUtil.getUserInfoWebTarget(client);
+                Form form = new Form();
+                if (body) {
+                    form.param("access_token", token);
+                }
+                jakarta.ws.rs.client.Invocation.Builder request = target.request();
+                if (!body) {
+                    request.header(HttpHeaders.AUTHORIZATION, "Bearer " + token);
+                }
+
+                try (Response response = post ? request.post(Entity.form(form)) : request.get()) {
+                    assertEquals(Status.UNAUTHORIZED.getStatusCode(), response.getStatus());
+                    assertThat(response.getHeaderString(HttpHeaders.WWW_AUTHENTICATE),
+                            CoreMatchers.containsString("error=\"" + OAuthErrorException.INVALID_TOKEN + "\""));
+                }
+                events.expect(EventType.USER_INFO_REQUEST_ERROR)
+                        .error(Errors.INVALID_TOKEN)
+                        .client((String) null)
+                        .user(Matchers.nullValue(String.class))
+                        .session(Matchers.nullValue(String.class))
+                        .detail(Details.AUTH_METHOD, Details.VALIDATE_ACCESS_TOKEN)
+                        .assertEvent();
+            }
+        }
+    }
+
+    @Test
     public void testUnsuccessfulUserInfoRequestwithDuplicatedParams() {
         Client client = AdminClientUtil.createResteasyClient();
 
