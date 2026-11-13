@@ -1,0 +1,28 @@
+name: security-sast
+
+# Weekly + manual. detect-secrets + Semgrep (app/code repos).
+on:
+  schedule:
+    - cron: '34 4 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  detect-secrets:
+    if: github.actor != 'lfbot' && github.actor != 'lf-actions'
+    uses: lotusflare/actions/.github/workflows/detect-secrets.yaml@338e86682683cd819bad504e75baeaaf8ee362a5
+    secrets: {}
+    with:
+      SCAN_TYPE: "Detect-secrets Scan"
+      TEST_TITLE: "Detect Secrets SAST"
+
+  semgrep:
+    if: github.actor != 'lfbot' && github.actor != 'lf-actions'
+    uses: lotusflare/actions/.github/workflows/semgrep-sast.yaml@338e86682683cd819bad504e75baeaaf8ee362a5
+    secrets:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+    with:
+      SCAN_TYPE: "Semgrep JSON Report"
+      TEST_TITLE: "Semgrep SAST"
